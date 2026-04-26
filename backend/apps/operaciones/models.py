@@ -2,6 +2,13 @@ from django.db import models
 from apps.maestros.models import Cliente, Proveedor, Salida, Tarifa, Adicional
 
 
+ESTADO_CHOICES = (
+    ('pendiente', 'Pendiente'),
+    ('habilitado', 'Habilitado'),
+    ('preliquidado','Preliquidado'),
+    ('liquidado', 'Liquidado'),
+)   
+
 class Viaje(models.Model):
     fecha     = models.DateField()
     salida    = models.ForeignKey(Salida,   on_delete=models.PROTECT, related_name='viajes')
@@ -9,6 +16,7 @@ class Viaje(models.Model):
     proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name='viajes')
     tarifa    = models.ForeignKey(Tarifa,   on_delete=models.PROTECT, related_name='viajes')
     remito    = models.PositiveIntegerField(null=True, blank=True)
+    estado    = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
 
     # FK inversas — se asignan al preliquidar/liquidar
     preliquidacion = models.ForeignKey(
@@ -152,3 +160,67 @@ class LiquidacionDetalle(models.Model):
     def __str__(self):
         return f"{self.liquidacion} — viaje {self.viaje_id}"
 
+
+# ── Gastos ────────────────────────────────────────────────────────────────────
+
+class Gasto(models.Model):
+    """
+    Gastos en los que incurre el proveedor durante el período.
+    Se descuentan del total a pagar en la Liquidacion.
+
+    combustible (JSONField): {
+        'lts_comb':          float,
+        'precio_lts_comb':   float,
+        'precio_total_comb': float   # lts * precio_lts (sin descuento)
+    }
+    Al liquidar se aplica un 20% de descuento sobre precio_total_comb.
+
+    varios (JSONField): [
+        {'descripcion': str, 'monto': float},
+        ...
+    ]
+    """
+
+    fecha_gasto        = models.DateField()
+    proveedor          = models.ForeignKey(
+        Proveedor, on_delete=models.PROTECT, related_name='gastos'
+    )
+    varios             = models.JSONField(
+        default=list, blank=True,
+        help_text='Lista de {descripcion, monto}'
+    )
+    adelanto_otros     = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    combustible        = models.JSONField(
+        default=dict, blank=True,
+        help_text='{lts_comb, precio_lts_comb, precio_total_comb}'
+    )
+    remito_combustible = models.CharField(max_length=100, blank=True)
+    liquidacion        = models.ForeignKey(
+        'Liquidacion', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='gastos'
+    )
+
+    class Meta:
+        ordering = ['-fecha_gasto']
+
+    def __str__(self):
+        return f"Gasto {self.proveedor} | {self.fecha_gasto}"
+
+    @property
+    def total_combustible(self):
+        """Aplica 20% de descuento sobre precio_total_comb."""
+        precio_bruto = (self.combustible or {}).get('precio_total_comb', 0)
+        return round(float(precio_bruto) * 0.8, 2)
+
+    @property
+    def total_varios(self):
+        """Suma de todos los montos en varios."""
+        return round(sum(float(v.get('monto', 0)) for v in (self.varios or [])), 2)
+
+    @property
+    def total_gasto(self):
+        """Total descontable: combustible (con descuento) + varios + adelanto_otros."""
+        return round(
+            self.total_combustible + self.total_varios + float(self.adelanto_otros),
+            2
+        )
