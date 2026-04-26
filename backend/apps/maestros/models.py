@@ -1,0 +1,152 @@
+from django.db import models
+from django.utils import timezone
+
+
+class Cliente(models.Model):
+    nombre = models.CharField(max_length=150)
+    cuit   = models.CharField(max_length=13, unique=True)
+    email  = models.EmailField(blank=True)
+
+    class Meta:
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
+class Proveedor(models.Model):
+    class Categoria(models.TextChoices):
+        TERCERO_SIN_SEMI = '3ero_sin_semi', '3ero SIN SEMI'
+        CAT_1            = '1',             'Categoría 1'
+        CAT_2            = '2',             'Categoría 2'
+        CAT_3            = '3',             'Categoría 3'
+
+    nombre            = models.CharField(max_length=150)
+    chofer            = models.CharField(max_length=150, blank=True)
+    email             = models.EmailField(blank=True)
+    categoria         = models.CharField(max_length=20, choices=Categoria.choices)
+    datos_transporte  = models.JSONField(default=dict, blank=True)  # patente, tipo vehículo, etc.
+
+    class Meta:
+        ordering = ['nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_categoria_display()})"
+
+
+class Salida(models.Model):
+    ida    = models.CharField(max_length=100)
+    vuelta = models.CharField(max_length=100)
+
+    class Meta:
+        ordering            = ['ida', 'vuelta']
+        unique_together     = [('ida', 'vuelta')]
+
+    @property
+    def descripcion(self):
+        return f"{self.ida} - {self.vuelta}"
+
+    def __str__(self):
+        return self.descripcion
+
+
+class Tarifa(models.Model):
+    PRECIO_POR_CATEGORIA = {
+        '3ero_sin_semi': 'precio_cat_3ero_sin_semi',
+        '1':             'precio_cat_1',
+        '2':             'precio_cat_2',
+        '3':             'precio_cat_3',
+    }
+
+    salida   = models.ForeignKey(Salida,  on_delete=models.PROTECT, related_name='tarifas')
+    cliente  = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name='tarifas')
+
+    precio_cat_3ero_sin_semi = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_1             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_2             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_3             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    vigente_desde = models.DateField()
+    vigente_hasta = models.DateField(null=True, blank=True)
+    activo        = models.BooleanField(default=True)
+    version       = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['salida', 'cliente', '-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['salida', 'cliente'],
+                condition=models.Q(activo=True),
+                name='unique_tarifa_activa_por_salida_cliente'
+            )
+        ]
+
+    def precio_para_proveedor(self, proveedor):
+        campo = self.PRECIO_POR_CATEGORIA[proveedor.categoria]
+        return getattr(self, campo)
+
+    def __str__(self):
+        return f"{self.salida} | {self.cliente} | v{self.version}"
+
+    @classmethod
+    def actualizar(cls, salida, cliente, nuevos_precios: dict, fecha_desde):
+        """
+        Cierra la tarifa activa y crea una nueva versión.
+        nuevos_precios = {'precio_cat_1': 730000, ...}
+        """
+        ultima_version = 0
+        activa = cls.objects.filter(salida=salida, cliente=cliente, activo=True).first()
+        if activa:
+            ultima_version = activa.version
+            activa.activo        = False
+            activa.vigente_hasta = fecha_desde - timezone.timedelta(days=1)
+            activa.save(update_fields=['activo', 'vigente_hasta'])
+
+        return cls.objects.create(
+            salida=salida,
+            cliente=cliente,
+            version=ultima_version + 1,
+            vigente_desde=fecha_desde,
+            activo=True,
+            **nuevos_precios,
+        )
+
+
+class Adicional(models.Model):
+    PRECIO_POR_CATEGORIA = {
+        '3ero_sin_semi': 'precio_cat_3ero_sin_semi',
+        '1':             'precio_cat_1',
+        '2':             'precio_cat_2',
+        '3':             'precio_cat_3',
+    }
+
+    nombre  = models.CharField(max_length=150)
+    cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name='adicionales')
+
+    precio_cat_3ero_sin_semi = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_1             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_2             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    precio_cat_3             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    vigente_desde = models.DateField()
+    vigente_hasta = models.DateField(null=True, blank=True)
+    activo        = models.BooleanField(default=True)
+    version       = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['nombre', 'cliente', '-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nombre', 'cliente'],
+                condition=models.Q(activo=True),
+                name='unique_adicional_activo_por_nombre_cliente'
+            )
+        ]
+
+    def precio_para_proveedor(self, proveedor):
+        campo = self.PRECIO_POR_CATEGORIA[proveedor.categoria]
+        return getattr(self, campo)
+
+    def __str__(self):
+        return f"{self.nombre} | {self.cliente} | v{self.version}"
+
