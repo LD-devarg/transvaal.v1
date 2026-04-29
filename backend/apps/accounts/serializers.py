@@ -3,11 +3,13 @@ from .models import User
 
 
 class UserSerializer(serializers.ModelSerializer):
-    rol_display = serializers.CharField(source='get_rol_display', read_only=True)
+    rol_display      = serializers.CharField(source='get_rol_display', read_only=True)
+    proveedor_nombre = serializers.CharField(source='proveedor.nombre', read_only=True)
 
     class Meta:
         model  = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'rol', 'rol_display', 'is_active')
+        fields = ('id', 'email', 'first_name', 'last_name', 'rol', 'rol_display',
+                  'is_active', 'proveedor', 'proveedor_nombre')
         read_only_fields = ('id', 'email', 'is_active')
 
 
@@ -16,7 +18,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = User
-        fields = ('email', 'first_name', 'last_name', 'rol', 'password')
+        fields = ('email', 'first_name', 'last_name', 'rol', 'password', 'proveedor')
 
     def create(self, validated_data):
         password = validated_data.pop('password')

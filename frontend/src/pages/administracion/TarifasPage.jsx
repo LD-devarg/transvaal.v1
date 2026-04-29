@@ -6,7 +6,7 @@ import {
   Dialog, DialogTitle, DialogContent, IconButton, Grid, Autocomplete,
   InputAdornment,
 } from '@mui/material'
-import { Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon } from '@mui/icons-material'
+import { Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon, Delete as DeleteIcon } from '@mui/icons-material'
 
 const darkField = {
   '& .MuiOutlinedInput-root': { color: '#fff', fontSize: 13, bgcolor: 'rgba(255,255,255,0.03)', '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.25)' }, '&.Mui-focused fieldset': { borderColor: '#3b82f6', borderWidth: 2 } },
@@ -47,6 +47,9 @@ export default function TarifasPage() {
   const [success, setSuccess]   = useState('')
   const [filtCliente, setFiltCliente] = useState(null)
   const [prefillTarifa, setPrefillTarifa] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [deleting, setDeleting]           = useState(false)
+  const [deleteError, setDeleteError]     = useState('')
 
   useEffect(() => {
     client.get('/maestros/clientes/').then(r => setClientes(r.data))
@@ -104,6 +107,20 @@ export default function TarifasPage() {
 
   const setP = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
+  const handleDelete = async () => {
+    if (!confirmDelete) return
+    setDeleting(true); setDeleteError('')
+    try {
+      await client.delete(`/maestros/tarifas/${confirmDelete.id}/`)
+      setConfirmDelete(null)
+      setSuccess('Tarifa eliminada.')
+      cargar()
+    } catch (err) {
+      const d = err.response?.data || {}
+      setDeleteError(d.detail || 'No se pudo eliminar.')
+    } finally { setDeleting(false) }
+  }
+
   return (
     <Box>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -154,10 +171,16 @@ export default function TarifasPage() {
                   <TableCell sx={TD}>{fmtFecha(t.vigente_desde)}</TableCell>
                   <TableCell sx={{ ...TD, color: 'rgba(255,255,255,0.35)' }}>v{t.version}</TableCell>
                   <TableCell sx={TD}>
-                    <IconButton size="small" onClick={() => abrirNueva(t)} title="Actualizar tarifa"
-                      sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
-                      <RefreshIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <IconButton size="small" onClick={() => abrirNueva(t)} title="Actualizar tarifa"
+                        sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
+                        <RefreshIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => { setConfirmDelete(t); setDeleteError('') }} title="Eliminar"
+                        sx={{ color: 'rgba(255,255,255,0.2)', '&:hover': { color: '#f87171' } }}>
+                        <DeleteIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}
@@ -218,6 +241,29 @@ export default function TarifasPage() {
             </Box>
           </Box>
         </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete tarifa */}
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth
+        slotProps={{ paper: { sx: { bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 3 } } }}>
+        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Eliminar tarifa</DialogTitle>
+        <DialogContent>
+          {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
+          <Typography sx={{ color: '#cbd5e1', fontSize: 14 }}>
+            ¿Eliminar la tarifa de <strong>{confirmDelete?.cliente_nombre}</strong> —{' '}
+            {confirmDelete?.salida_descripcion}? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', px: 3, pb: 3 }}>
+          <Button onClick={() => setConfirmDelete(null)} sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleDelete} disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />}
+            sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' }, textTransform: 'none', fontWeight: 700 }}>
+            {deleting ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </Box>
       </Dialog>
     </Box>
   )

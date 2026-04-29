@@ -3,6 +3,11 @@ from .models import User
 from .serializers import UserSerializer, UserCreateSerializer
 
 
+class IsAdmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.rol == 'admin'
+
+
 class MeView(generics.RetrieveUpdateAPIView):
     """GET /api/auth/me/  — perfil del usuario autenticado"""
     serializer_class   = UserSerializer
@@ -15,7 +20,11 @@ class MeView(generics.RetrieveUpdateAPIView):
 class UserListCreateView(generics.ListCreateAPIView):
     """GET/POST /api/auth/users/  — solo admins"""
     queryset           = User.objects.all().order_by('email')
-    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdmin()]
+        return [permissions.IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -32,4 +41,4 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     """GET/PATCH/DELETE /api/auth/users/<id>/  — solo admins"""
     queryset           = User.objects.all()
     serializer_class   = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]

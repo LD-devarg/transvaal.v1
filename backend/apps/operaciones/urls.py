@@ -6,6 +6,8 @@ from .views import (
     PreliquidacionAgregarViajeView, PreliquidacionQuitarViajeView,
     PreliquidacionAgregarGastoView, PreliquidacionQuitarGastoView,
     LiquidacionListCreateView, LiquidacionDetailView, GenerarLiquidacionView,
+    MisViajesView, MisLiquidacionesView, MisPreliquidacionesView,
+    ResponderPreliquidacionView,
 )
 
 urlpatterns = [
@@ -30,5 +32,11 @@ urlpatterns = [
     path('liquidaciones/',          LiquidacionListCreateView.as_view(), name='liquidacion_list'),
     path('liquidaciones/generar/',  GenerarLiquidacionView.as_view(),    name='liquidacion_generar'),
     path('liquidaciones/<int:pk>/', LiquidacionDetailView.as_view(),     name='liquidacion_detail'),
+
+    # Empleado (readonly, filtrado por proveedor vinculado al usuario)
+    path('mis-viajes/',            MisViajesView.as_view(),            name='mis_viajes'),
+    path('mis-liquidaciones/',     MisLiquidacionesView.as_view(),     name='mis_liquidaciones'),
+    path('mis-preliquidaciones/',          MisPreliquidacionesView.as_view(),       name='mis_preliquidaciones'),
+    path('mis-preliquidaciones/<int:pk>/responder/', ResponderPreliquidacionView.as_view(), name='mis_preliquidaciones_responder'),
 ]
 

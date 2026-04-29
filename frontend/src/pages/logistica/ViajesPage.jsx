@@ -2,21 +2,23 @@
 import client from '../../api/client'
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button,
-  Alert, CircularProgress, Autocomplete, Chip, Divider,
-  InputAdornment, Switch, FormControlLabel,
+  Alert, CircularProgress, Autocomplete, Divider,
+  InputAdornment, IconButton,
   Table, TableBody, TableCell, TableHead, TableRow,
-  Dialog, DialogTitle, DialogContent, IconButton,
+  Dialog, DialogTitle, DialogContent,
   Pagination, Select, MenuItem, FormControl, InputLabel,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Edit as EditIcon,
+  Delete as DeleteIcon,
   CalendarToday as CalendarIcon,
   Person as PersonIcon,
   AltRoute as RouteIcon,
   LocalShipping as TruckIcon,
   ReceiptLong as RemitoIcon,
   StarBorder as AdicionalIcon,
+  AttachMoney as MoneyIcon,
   CheckCircleOutlined as CheckIcon,
   FilterList as FilterIcon,
   Close as CloseIcon,
@@ -94,33 +96,34 @@ const SectionLabel = ({ children }) => (
 
 const INITIAL_FORM = {
   fecha: new Date().toISOString().slice(0, 10),
-  cliente: '', salida: '', proveedor: '', remito: '', adicionales_ids: [],
+  cliente: '', salida: '', proveedor: '', remito: '',
+  adicionales: [], // [{ adicional_id: number|null, precio_manual: '', descripcion: '' }]
 }
 
 function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editViaje = null }) {
-  const [salidas, setSalidas]           = useState([])
-  const [tarifa, setTarifa]             = useState(null)
-  const [form, setForm]                 = useState(INITIAL_FORM)
-  const [conAdicional, setConAdicional] = useState(false)
-  const [loading, setLoading]           = useState(false)
-  const [error, setError]               = useState('')
+  const [salidas, setSalidas]   = useState([])
+  const [tarifa, setTarifa]     = useState(null)
+  const [form, setForm]         = useState(INITIAL_FORM)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
 
   // Pre-rellenar cuando se edita
   useEffect(() => {
     if (editViaje) {
-      const adics = (editViaje.adicionales || []).map((a) => a.adicional)
       setForm({
-        fecha:          editViaje.fecha,
-        cliente:        editViaje.cliente,
-        salida:         editViaje.salida,
-        proveedor:      editViaje.proveedor,
-        remito:         editViaje.remito || '',
-        adicionales_ids: adics,
+        fecha:     editViaje.fecha,
+        cliente:   editViaje.cliente,
+        salida:    editViaje.salida,
+        proveedor: editViaje.proveedor,
+        remito:    editViaje.remito || '',
+        adicionales: (editViaje.adicionales || []).map((a) => ({
+          adicional_id: a.adicional,
+          precio_manual: a.adicional_tipo === 'al_momento' ? String(a.precio_snapshot) : '',
+          descripcion:   a.adicional_tipo === 'al_momento' ? (a.descripcion_snapshot || '') : '',
+        })),
       })
-      setConAdicional(adics.length > 0)
     } else {
       setForm(INITIAL_FORM)
-      setConAdicional(false)
     }
   }, [editViaje])
 
@@ -146,11 +149,12 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
     return val != null ? parseFloat(val) : null
   })()
 
-  const adicionalesDelCliente = todosAdicionales.filter((a) => a.cliente === Number(form.cliente))
+  const adicionalesDelCliente = todosAdicionales.filter((a) => a.cliente === Number(form.cliente) || a.cliente === null)
 
-  const precioAdicionales = form.adicionales_ids.reduce((sum, id) => {
-    const ad = adicionalesDelCliente.find((a) => a.id === id)
+  const precioAdicionales = form.adicionales.reduce((sum, item) => {
+    const ad = adicionalesDelCliente.find((a) => a.id === item.adicional_id)
     if (!ad || !proveedorSelec) return sum
+    if (ad.tipo === 'al_momento') return sum + (parseFloat(item.precio_manual) || 0)
     return sum + parseFloat(ad[CAT_MAP[proveedorSelec.categoria]] || 0)
   }, 0)
 
@@ -159,28 +163,56 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
   const handleChange = (e) => {
     const { name, value } = e.target
     if (name === 'cliente') {
-      setForm((f) => ({ ...f, cliente: value, salida: '', adicionales_ids: [] }))
-      setConAdicional(false)
+      setForm((f) => ({ ...f, cliente: value, salida: '', adicionales: [] }))
     } else {
       setForm((f) => ({ ...f, [name]: value }))
     }
   }
 
+  const addAdicional    = () => setForm((f) => ({ ...f, adicionales: [...f.adicionales, { adicional_id: null, precio_manual: '', descripcion: '' }] }))
+  const removeAdicional = (idx) => setForm((f) => ({ ...f, adicionales: f.adicionales.filter((_, i) => i !== idx) }))
+  const setAdicionalId  = (idx, id) => setForm((f) => {
+    const adicionales = [...f.adicionales]
+    adicionales[idx] = { ...adicionales[idx], adicional_id: id }
+    return { ...f, adicionales }
+  })
+  const setAdicionalPrecio = (idx, precio) => setForm((f) => {
+    const adicionales = [...f.adicionales]
+    adicionales[idx] = { ...adicionales[idx], precio_manual: precio }
+    return { ...f, adicionales }
+  })
+  const setAdicionalDescripcion = (idx, desc) => setForm((f) => {
+    const adicionales = [...f.adicionales]
+    adicionales[idx] = { ...adicionales[idx], descripcion: desc }
+    return { ...f, adicionales }
+  })
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!tarifa) { setError('No hay tarifa para esta combinación de cliente y destino.'); return }
     setLoading(true); setError('')
+    const adicionalesPayload = form.adicionales
+      .filter((item) => item.adicional_id)
+      .map((item) => {
+        const ad = adicionalesDelCliente.find((a) => a.id === item.adicional_id)
+        const result = { adicional_id: item.adicional_id }
+        if (ad?.tipo === 'al_momento') {
+          result.precio_manual = parseFloat(item.precio_manual) || 0
+          result.descripcion   = item.descripcion || ''
+        }
+        return result
+      })
     const payload = {
       fecha: form.fecha, cliente: form.cliente, salida: form.salida,
       proveedor: form.proveedor, tarifa: tarifa.id,
-      remito: form.remito || null, adicionales_ids: form.adicionales_ids,
+      remito: form.remito || null, adicionales: adicionalesPayload,
     }
     try {
       if (editViaje) {
         await client.patch(`/operaciones/viajes/${editViaje.id}/`, payload)
       } else {
         await client.post('/operaciones/viajes/', payload)
-        setForm(INITIAL_FORM); setConAdicional(false); setTarifa(null)
+        setForm(INITIAL_FORM); setTarifa(null)
       }
       onSuccess()
     } catch (err) {
@@ -260,35 +292,65 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
       </Grid>
 
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.06)', mb: 3 }} />
-      <SectionLabel>Adicionales</SectionLabel>
-      <FormControlLabel
-        control={
-          <Switch checked={conAdicional}
-            onChange={(e) => { setConAdicional(e.target.checked); if (!e.target.checked) setForm((f) => ({ ...f, adicionales_ids: [] })) }}
-            disabled={!form.cliente || adicionalesDelCliente.length === 0}
-            size="small"
-            sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#3b82f6' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#3b82f6' } }}
-          />
-        }
-        label={<Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
-          {!form.cliente ? 'Selecciona un cliente primero' : adicionalesDelCliente.length === 0 ? 'Sin adicionales para este cliente' : 'Incluir adicionales'}
-        </Typography>}
-      />
-      {conAdicional && adicionalesDelCliente.length > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <Autocomplete multiple options={adicionalesDelCliente} getOptionLabel={(o) => o.nombre}
-            value={adicionalesDelCliente.filter((a) => form.adicionales_ids.includes(a.id))}
-            onChange={(_, v) => setForm((f) => ({ ...f, adicionales_ids: v.map((x) => x.id) }))}
-            renderTags={(val, getTagProps) => val.map((opt, idx) => (
-              <Chip key={opt.id} label={opt.nombre} size="small" {...getTagProps({ index: idx })} icon={<AdicionalIcon />}
-                sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.3)', '& .MuiChip-deleteIcon': { color: 'rgba(147,197,253,0.6)' }, '& .MuiChip-icon': { color: '#93c5fd', fontSize: 14 } }}
-              />
-            ))}
-            renderInput={(params) => <TextField {...params} label="Adicionales" placeholder="Buscar..." size="small" sx={darkField} />}
-            sx={{ '& .MuiAutocomplete-popupIndicator': { color: 'rgba(255,255,255,0.4)' } }}
-          />
-        </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <SectionLabel>Adicionales</SectionLabel>
+        <Button size="small" onClick={addAdicional}
+          disabled={!form.cliente || adicionalesDelCliente.length === 0}
+          sx={{ color: '#60a5fa', fontSize: 12, textTransform: 'none', py: 0.3, mt: -1.5 }}>
+          + Agregar
+        </Button>
+      </Box>
+      {!form.cliente && (
+        <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, mb: 2 }}>Selecciona un cliente primero.</Typography>
       )}
+      {form.cliente && adicionalesDelCliente.length === 0 && (
+        <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, mb: 2 }}>Sin adicionales para este cliente.</Typography>
+      )}
+      {form.adicionales.length === 0 && form.cliente && adicionalesDelCliente.length > 0 && (
+        <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, mb: 2 }}>Sin adicionales agregados.</Typography>
+      )}
+      {form.adicionales.map((item, idx) => {
+        const adOpt = adicionalesDelCliente.find((a) => a.id === item.adicional_id)
+        const esAlMomento = adOpt?.tipo === 'al_momento'
+        return (
+          <Grid container spacing={1.5} key={idx} sx={{ mb: 1.5, alignItems: 'center' }}>
+            <Grid size={{ xs: 12, sm: esAlMomento ? 5 : 10 }}>
+              <Autocomplete
+                options={adicionalesDelCliente}
+                getOptionLabel={(o) => o.nombre + (o.tipo === 'al_momento' ? ' (al momento)' : '')}
+                value={adicionalesDelCliente.find((a) => a.id === item.adicional_id) || null}
+                onChange={(_, v) => setAdicionalId(idx, v ? v.id : null)}
+                renderInput={(params) => (
+                  <TextField {...params} label="Adicional" size="small" sx={darkField}
+                    InputProps={{ ...params.InputProps, startAdornment: (<><InputAdornment position="start"><AdicionalIcon /></InputAdornment>{params.InputProps?.startAdornment}</>) }} />
+                )}
+                sx={{ '& .MuiAutocomplete-popupIndicator': { color: 'rgba(255,255,255,0.4)' }, '& .MuiAutocomplete-clearIndicator': { color: 'rgba(255,255,255,0.4)' } }}
+              />
+            </Grid>
+            {esAlMomento && (
+              <Grid size={{ xs: 7, sm: 3 }}>
+                <TextField label="Descripción" value={item.descripcion}
+                  onChange={(e) => setAdicionalDescripcion(idx, e.target.value)}
+                  fullWidth size="small" sx={darkField} inputProps={{ maxLength: 200 }} />
+              </Grid>
+            )}
+            {esAlMomento && (
+              <Grid size={{ xs: 5, sm: 3 }}>
+                <TextField label="Precio" type="number" value={item.precio_manual}
+                  onChange={(e) => setAdicionalPrecio(idx, e.target.value)}
+                  fullWidth size="small" sx={darkField}
+                  slotProps={{ input: { startAdornment: <InputAdornment position="start"><MoneyIcon /></InputAdornment> } }} />
+              </Grid>
+            )}
+            <Grid size={{ xs: esAlMomento ? 12 : 2, sm: 1 }} sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton onClick={() => removeAdicional(idx)} size="small"
+                sx={{ color: 'rgba(248,113,113,0.7)', '&:hover': { color: '#f87171' } }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Grid>
+          </Grid>
+        )
+      })}
 
       {form.cliente && form.salida && (
         <>
@@ -306,13 +368,15 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
                 <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>Tarifa base</Typography>
                 <Typography sx={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>{precioTarifa != null ? fmtPeso(precioTarifa) : '-'}</Typography>
               </Box>
-              {form.adicionales_ids.map((id) => {
-                const ad = adicionalesDelCliente.find((a) => a.id === id)
+              {form.adicionales.map((item, i) => {
+                const ad = adicionalesDelCliente.find((a) => a.id === item.adicional_id)
                 if (!ad) return null
-                const precio = parseFloat(ad[CAT_MAP[proveedorSelec.categoria]] || 0)
+                const precio = ad.tipo === 'al_momento'
+                  ? (parseFloat(item.precio_manual) || 0)
+                  : parseFloat(ad[CAT_MAP[proveedorSelec.categoria]] || 0)
                 return (
-                  <Box key={id} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>+ {ad.nombre}</Typography>
+                  <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>+ {ad.nombre}{ad.tipo === 'al_momento' ? ' *' : ''}</Typography>
                     <Typography sx={{ color: '#93c5fd', fontSize: 12 }}>{fmtPeso(precio)}</Typography>
                   </Box>
                 )
@@ -364,6 +428,9 @@ export default function ViajesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editViaje, setEditViaje] = useState(null)
   const [success, setSuccess]     = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(null) // viaje a borrar
+  const [deleting, setDeleting]           = useState(false)
+  const [deleteError, setDeleteError]     = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -406,6 +473,22 @@ export default function ViajesPage() {
 
   const abrirNuevo = () => { setEditViaje(null); setModalOpen(true) }
   const abrirEditar = (v) => { setEditViaje(v); setModalOpen(true) }
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return
+    setDeleting(true); setDeleteError('')
+    try {
+      await client.delete(`/operaciones/viajes/${confirmDelete.id}/`)
+      setConfirmDelete(null)
+      setSuccess('Viaje eliminado correctamente.')
+      cargarViajes(page)
+    } catch (err) {
+      const data = err.response?.data || {}
+      setDeleteError(data.detail || 'No se pudo eliminar el viaje.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const handleSuccess = () => {
     setModalOpen(false)
@@ -563,11 +646,18 @@ export default function ViajesPage() {
                       </TableCell>
                       <TableCell sx={TD}><EstadoChip estado={v.estado} /></TableCell>
                       <TableCell sx={TD}>
-                        {(v.estado === 'pendiente' || v.estado === 'habilitado') && (
-                          <IconButton size="small" onClick={() => abrirEditar(v)}
-                            sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
-                            <EditIcon sx={{ fontSize: 15 }} />
-                          </IconButton>
+                        {(v.estado === 'pendiente' || v.estado === 'habilitado' ||
+                          (v.estado === 'preliquidado' && (v.preliquidacion_estado === 'pendiente' || v.preliquidacion_estado === 'para_revisar'))) && (
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <IconButton size="small" onClick={() => abrirEditar(v)}
+                              sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
+                              <EditIcon sx={{ fontSize: 15 }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => { setConfirmDelete(v); setDeleteError('') }}
+                              sx={{ color: 'rgba(255,255,255,0.2)', '&:hover': { color: '#f87171' } }}>
+                              <DeleteIcon sx={{ fontSize: 15 }} />
+                            </IconButton>
+                          </Box>
                         )}
                       </TableCell>
                     </TableRow>
@@ -610,6 +700,29 @@ export default function ViajesPage() {
         <DialogContent sx={{ pt: 2 }}>
           <ViajeForm onSuccess={handleSuccess} clientes={clientes} proveedores={proveedores} todosAdicionales={todosAdicionales} editViaje={editViaje} />
         </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete viaje */}
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth
+        slotProps={{ paper: { sx: { bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 3 } } }}>
+        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Eliminar viaje</DialogTitle>
+        <DialogContent>
+          {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
+          <Typography sx={{ color: '#cbd5e1', fontSize: 14 }}>
+            ¿Eliminar el viaje del <strong>{confirmDelete && fmtFecha(confirmDelete.fecha)}</strong> —{' '}
+            {confirmDelete?.proveedor_nombre}? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', px: 3, pb: 3 }}>
+          <Button onClick={() => setConfirmDelete(null)} sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleDelete} disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />}
+            sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' }, textTransform: 'none', fontWeight: 700 }}>
+            {deleting ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </Box>
       </Dialog>
     </Box>
   )

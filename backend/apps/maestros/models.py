@@ -27,6 +27,9 @@ class Proveedor(models.Model):
     categoria          = models.CharField(max_length=20, choices=Categoria.choices)
     datos_transporte   = models.JSONField(default=dict, blank=True, null=True)  # patente, tipo vehículo, etc.
     carpeta_drive_id   = models.CharField(max_length=100, blank=True, null=True, help_text='ID de carpeta en Google Drive')
+    telefono           = models.CharField(max_length=30, blank=True, null=True)
+    telegram_chat_id   = models.CharField(max_length=80, blank=True, null=True)
+    telegram_activo    = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['nombre']
@@ -115,6 +118,10 @@ class Tarifa(models.Model):
 
 
 class Adicional(models.Model):
+    class Tipo(models.TextChoices):
+        POR_TARIFA = 'por_tarifa', 'Por tarifa'
+        AL_MOMENTO = 'al_momento', 'Al momento'
+
     PRECIO_POR_CATEGORIA = {
         '3ero_sin_semi': 'precio_cat_3ero_sin_semi',
         '1':             'precio_cat_1',
@@ -123,7 +130,8 @@ class Adicional(models.Model):
     }
 
     nombre  = models.CharField(max_length=150)
-    cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name='adicionales')
+    cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name='adicionales', null=True, blank=True)
+    tipo    = models.CharField(max_length=12, choices=Tipo.choices, default=Tipo.POR_TARIFA)
 
     precio_cat_3ero_sin_semi = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     precio_cat_1             = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -136,19 +144,22 @@ class Adicional(models.Model):
     version       = models.PositiveIntegerField(default=1)
 
     class Meta:
-        ordering = ['nombre', 'cliente', '-version']
+        ordering = ['nombre', '-version']
         constraints = [
             models.UniqueConstraint(
                 fields=['nombre', 'cliente'],
-                condition=models.Q(activo=True),
+                condition=models.Q(activo=True) & models.Q(cliente__isnull=False),
                 name='unique_adicional_activo_por_nombre_cliente'
             )
         ]
 
     def precio_para_proveedor(self, proveedor):
+        if self.tipo == self.Tipo.AL_MOMENTO:
+            return None
         campo = self.PRECIO_POR_CATEGORIA[proveedor.categoria]
         return getattr(self, campo)
 
     def __str__(self):
-        return f"{self.nombre} | {self.cliente} | v{self.version}"
+        cliente_str = self.cliente.nombre if self.cliente_id else 'Global'
+        return f"{self.nombre} | {cliente_str} | v{self.version}"
 

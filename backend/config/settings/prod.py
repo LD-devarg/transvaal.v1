@@ -21,8 +21,13 @@ DATABASES = {
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': config('REDIS_URL'),
-        'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+        'LOCATION': config('CACHE_REDIS_URL', default=config('REDIS_URL')),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'IGNORE_EXCEPTIONS': True,
+        },
+        'KEY_PREFIX': config('CACHE_KEY_PREFIX', default='transvaal:prod'),
+        'TIMEOUT': API_CACHE_TIMEOUT,
     }
 }
 CELERY_BROKER_URL = config('REDIS_URL')

@@ -9,8 +9,14 @@ class User(AbstractUser):
         CONTABILIDAD = 'contabilidad', 'Contabilidad'
         READONLY     = 'readonly',     'Solo lectura'
 
-    email = models.EmailField(unique=True)
-    rol   = models.CharField(max_length=20, choices=Rol.choices, default=Rol.READONLY)
+    email     = models.EmailField(unique=True)
+    rol       = models.CharField(max_length=20, choices=Rol.choices, default=Rol.READONLY)
+    proveedor = models.ForeignKey(
+        'maestros.Proveedor',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='usuarios',
+    )
 
     USERNAME_FIELD  = 'email'
     REQUIRED_FIELDS = ['username']

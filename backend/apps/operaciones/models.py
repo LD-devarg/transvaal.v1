@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from apps.maestros.models import Cliente, Proveedor, Salida, Tarifa, Adicional
 
 
@@ -30,6 +31,13 @@ class Viaje(models.Model):
 
     class Meta:
         ordering = ['-fecha']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['remito', 'fecha', 'proveedor'],
+                condition=Q(remito__isnull=False) & ~Q(remito=''),
+                name='unique_remito_fecha_proveedor',
+            )
+        ]
 
     def __str__(self):
         return f"{self.fecha} | {self.salida} | {self.proveedor}"
@@ -50,8 +58,9 @@ class ViajeAdicional(models.Model):
     adicional = models.ForeignKey(Adicional, on_delete=models.PROTECT, related_name='viajes')
 
     # Snapshot al momento de asignar el adicional al viaje
-    nombre_snapshot = models.CharField(max_length=150)
-    precio_snapshot = models.DecimalField(max_digits=12, decimal_places=2)
+    nombre_snapshot      = models.CharField(max_length=150)
+    descripcion_snapshot = models.CharField(max_length=200, blank=True)
+    precio_snapshot      = models.DecimalField(max_digits=12, decimal_places=2)
 
     class Meta:
         unique_together = [('viaje', 'adicional')]
@@ -62,7 +71,10 @@ class ViajeAdicional(models.Model):
     def save(self, *args, **kwargs):
         if not self.pk:
             self.nombre_snapshot = self.adicional.nombre
-            self.precio_snapshot = self.adicional.precio_para_proveedor(self.viaje.proveedor)
+            # Para 'por_tarifa': tomar precio de la tabla según categoría del proveedor.
+            # Para 'al_momento': precio_snapshot y descripcion_snapshot deben setearse antes de llamar save().
+            if self.adicional.tipo == 'por_tarifa':
+                self.precio_snapshot = self.adicional.precio_para_proveedor(self.viaje.proveedor)
         super().save(*args, **kwargs)
 
 

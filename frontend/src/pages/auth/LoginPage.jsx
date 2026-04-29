@@ -25,8 +25,8 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
-      navigate('/')
+      const me = await login(email, password)
+      navigate(me.rol === 'readonly' ? '/empleado' : '/')
     } catch (err) {
       const msg =
         err.response?.data?.detail ||

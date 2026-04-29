@@ -25,6 +25,7 @@ import ConfiguracionPage from './pages/administracion/ConfiguracionPage'
 
 // Empleado pages
 import MisViajesPage from './pages/empleado/MisViajesPage'
+import MisPreliquidacionesPage from './pages/empleado/MisPreliquidacionesPage'
 import MiDocumentacionPage from './pages/empleado/MiDocumentacionPage'
 import MisLiquidacionesPage from './pages/empleado/MisLiquidacionesPage'
 import MiPerfilPage from './pages/empleado/MiPerfilPage'
@@ -70,8 +71,9 @@ function App() {
           >
             <Route index element={<Navigate to="viajes" replace />} />
             <Route path="viajes" element={<MisViajesPage />} />
-            <Route path="documentacion" element={<MiDocumentacionPage />} />
+            <Route path="preliquidaciones" element={<MisPreliquidacionesPage />} />
             <Route path="liquidaciones" element={<MisLiquidacionesPage />} />
+            <Route path="documentacion" element={<MiDocumentacionPage />} />
             <Route path="perfil" element={<MiPerfilPage />} />
           </Route>
 

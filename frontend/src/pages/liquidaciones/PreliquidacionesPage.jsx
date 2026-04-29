@@ -16,7 +16,7 @@ import {
   Receipt as ReceiptIcon,
   Print as PrintIcon,
 } from '@mui/icons-material'
-import { printPreliquidacion } from '../../utils/print'
+import { printPreliquidacion, savePreliquidacionToDrive } from '../../utils/print'
 
 const IVA = 1.21
 
@@ -198,7 +198,13 @@ export default function PreliquidacionesPage() {
 
   const handleCambiarEstado = async (preliqId, nuevoEstado) => {
     try {
-      await client.patch(`/operaciones/preliquidaciones/${preliqId}/`, { estado: nuevoEstado })
+      const { data } = await client.patch(`/operaciones/preliquidaciones/${preliqId}/`, { estado: nuevoEstado })
+      if (nuevoEstado === 'enviada') {
+        const driveResult = await savePreliquidacionToDrive(data)
+        if (driveResult && !driveResult.ok) {
+          setError(`La preliquidacion se envio, pero no se pudo guardar el PDF en Drive: ${driveResult.error || 'error desconocido'}`)
+        }
+      }
       cargarHistorial(proveedor?.id || null)
     } catch {
       setError('No se pudo cambiar el estado.')
@@ -482,6 +488,7 @@ export default function PreliquidacionesPage() {
                                         <TableCell sx={TH}>Cliente</TableCell>
                                         <TableCell sx={TH}>Destino</TableCell>
                                         <TableCell sx={TH}>Remito</TableCell>
+                                        <TableCell sx={TH}>Adicionales</TableCell>
                                         <TableCell sx={{ ...TH, textAlign: 'right' }}>Sin IVA</TableCell>
                                         <TableCell sx={{ ...TH, textAlign: 'right' }}>Con IVA</TableCell>
                                       </TableRow>
@@ -493,6 +500,22 @@ export default function PreliquidacionesPage() {
                                           <TableCell sx={TD}>{d.cliente_snapshot}</TableCell>
                                           <TableCell sx={TD}>{d.salida_snapshot}</TableCell>
                                           <TableCell sx={TD}>{d.remito_snapshot || '-'}</TableCell>
+                                          <TableCell sx={TD}>
+                                            {(d.adicionales_snapshot || []).length === 0 ? (
+                                              <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>—</Typography>
+                                            ) : (
+                                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                                                {(d.adicionales_snapshot || []).map((a, i) => (
+                                                  <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                    <Typography sx={{ fontSize: 11, color: '#cbd5e1' }}>
+                                                      {a.nombre}{a.descripcion ? ` | ${a.descripcion}` : ''}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>{fmtPeso(a.precio)}</Typography>
+                                                  </Box>
+                                                ))}
+                                              </Box>
+                                            )}
+                                          </TableCell>
                                           <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(d.tarifa_sin_iva)}</TableCell>
                                           <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(d.tarifa_con_iva)}</TableCell>
                                         </TableRow>

@@ -13,7 +13,11 @@ class ProveedorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Proveedor
-        fields = ('id', 'nombre', 'chofer', 'email', 'categoria', 'categoria_display', 'datos_transporte', 'carpeta_drive_id')
+        fields = (
+            'id', 'nombre', 'chofer', 'email', 'categoria', 'categoria_display',
+            'datos_transporte', 'carpeta_drive_id',
+            'telefono', 'telegram_chat_id', 'telegram_activo',
+        )
 
 
 class SalidaSerializer(serializers.ModelSerializer):
@@ -58,12 +62,15 @@ class TarifaActualizarSerializer(serializers.Serializer):
 
 
 class AdicionalSerializer(serializers.ModelSerializer):
-    cliente_nombre = serializers.CharField(source='cliente.nombre', read_only=True)
+    cliente_nombre = serializers.CharField(source='cliente.nombre', read_only=True, default=None)
+    cliente        = serializers.PrimaryKeyRelatedField(
+        queryset=Cliente.objects.all(), allow_null=True, required=False, default=None
+    )
 
     class Meta:
         model  = Adicional
         fields = (
-            'id', 'nombre', 'cliente', 'cliente_nombre',
+            'id', 'nombre', 'cliente', 'cliente_nombre', 'tipo',
             'precio_cat_3ero_sin_semi', 'precio_cat_1', 'precio_cat_2', 'precio_cat_3',
             'vigente_desde', 'vigente_hasta', 'activo', 'version',
         )

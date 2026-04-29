@@ -10,9 +10,9 @@ class ClienteAdmin(admin.ModelAdmin):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(admin.ModelAdmin):
-    list_display  = ('nombre', 'chofer', 'categoria', 'email')
+    list_display  = ('nombre', 'chofer', 'categoria', 'email', 'telefono', 'telegram_activo')
     list_filter   = ('categoria',)
-    search_fields = ('nombre', 'chofer')
+    search_fields = ('nombre', 'chofer', 'telefono', 'telegram_chat_id')
 
 
 @admin.register(Salida)

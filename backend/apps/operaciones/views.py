@@ -33,19 +33,47 @@ class GastoListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        qs = Gasto.objects.select_related('proveedor')
+        qs = Gasto.objects.select_related('proveedor', 'preliquidacion')
         proveedor = self.request.query_params.get('proveedor')
         if proveedor:
             qs = qs.filter(proveedor_id=proveedor)
         if self.request.query_params.get('sin_preliquidar') == 'true':
             qs = qs.filter(preliquidacion__isnull=True)
-        return qs
+        desde = self.request.query_params.get('desde')
+        hasta = self.request.query_params.get('hasta')
+        if desde:
+            qs = qs.filter(fecha_gasto__gte=desde)
+        if hasta:
+            qs = qs.filter(fecha_gasto__lte=hasta)
+        return qs.order_by('-fecha_gasto')
 
 
 class GastoDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = GastoSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset           = Gasto.objects.select_related('proveedor')
+    queryset           = Gasto.objects.select_related('proveedor', 'preliquidacion')
+
+    def update(self, request, *args, **kwargs):
+        gasto = self.get_object()
+        puede, msg = _puede_editar_gasto(gasto)
+        if not puede:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        response = super().update(request, *args, **kwargs)
+        gasto.refresh_from_db()
+        if gasto.preliquidacion_id:
+            _recalcular_preliq(gasto.preliquidacion)
+        return response
+
+    def destroy(self, request, *args, **kwargs):
+        gasto = self.get_object()
+        puede, msg = _puede_editar_gasto(gasto)
+        if not puede:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        preliq = gasto.preliquidacion
+        response = super().destroy(request, *args, **kwargs)
+        if preliq:
+            _recalcular_preliq(preliq)
+        return response
 
 
 # ── Viajes ─────────────────────────────────────────────────────────────────────
@@ -90,21 +118,84 @@ class ViajeListCreateView(generics.ListCreateAPIView):
         return paginator.get_paginated_response(serializer.data)
 
 
+ESTADOS_PRELIQ_EDITABLES = {Preliquidacion.Estado.PENDIENTE, Preliquidacion.Estado.PARA_REVISAR}
+
+
+def _puede_editar_viaje(viaje):
+    """Retorna (bool, mensaje) según si el viaje se puede modificar."""
+    if viaje.preliquidacion_id is None:
+        return True, ''
+    estado = viaje.preliquidacion.estado
+    if estado in ESTADOS_PRELIQ_EDITABLES:
+        return True, ''
+    return False, f'El viaje está en una preliquidación con estado "{estado}" y no puede modificarse.'
+
+
+def _puede_editar_gasto(gasto):
+    """Retorna (bool, mensaje) según si el gasto se puede modificar."""
+    if gasto.preliquidacion_id is None:
+        return True, ''
+    estado = gasto.preliquidacion.estado
+    if estado in ESTADOS_PRELIQ_EDITABLES:
+        return True, ''
+    return False, f'El gasto está en una preliquidación con estado "{estado}" y no puede modificarse.'
+
+
+def _refresh_viaje_snapshot(viaje):
+    """Actualiza el PreliquidacionDetalle del viaje (snapshots + tarifas) y recalcula totales."""
+    detalle_qs = PreliquidacionDetalle.objects.filter(viaje=viaje).select_related('preliquidacion')
+    for detalle in detalle_qs:
+        precio_sin_iva = viaje.precio_tarifa()
+        precio_con_iva = (precio_sin_iva * IVA).quantize(Decimal('0.01'))
+        detalle.fecha_viaje          = viaje.fecha
+        detalle.chofer_snapshot      = viaje.proveedor.chofer
+        detalle.cliente_snapshot     = viaje.cliente.nombre
+        detalle.salida_snapshot      = viaje.salida.descripcion
+        detalle.remito_snapshot      = viaje.remito
+        detalle.adicionales_snapshot = _build_snapshot_adicionales(viaje)
+        detalle.tarifa_sin_iva       = precio_sin_iva
+        detalle.tarifa_con_iva       = precio_con_iva
+        detalle.adeudado_parcial     = precio_con_iva
+        detalle.save()
+        _recalcular_preliq(detalle.preliquidacion)
+
+
 class ViajeDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
     queryset = Viaje.objects.select_related(
-        'salida', 'cliente', 'proveedor', 'tarifa'
+        'salida', 'cliente', 'proveedor', 'tarifa', 'preliquidacion'
     ).prefetch_related('adicionales__adicional')
 
     def get_serializer_class(self):
         return ViajeWriteSerializer if self.request.method in ('PUT', 'PATCH') else ViajeSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        viaje = self.get_object()
+        puede, msg = _puede_editar_viaje(viaje)
+        if not puede:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        viaje = self.get_object()
+        puede, msg = _puede_editar_viaje(viaje)
+        if not puede:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        response = super().update(request, *args, **kwargs)
+        # Refrescar snapshot si el viaje está en una preliquidación editable
+        viaje.refresh_from_db()
+        viaje_full = Viaje.objects.select_related(
+            'salida', 'cliente', 'proveedor', 'tarifa'
+        ).prefetch_related('adicionales').get(pk=viaje.pk)
+        _refresh_viaje_snapshot(viaje_full)
+        return response
 
 
 # ── Preliquidaciones ───────────────────────────────────────────────────────────
 
 def _build_snapshot_adicionales(viaje):
     return [
-        {'nombre': a.nombre_snapshot, 'precio': str(a.precio_snapshot)}
+        {'nombre': a.nombre_snapshot, 'descripcion': a.descripcion_snapshot, 'precio': str(a.precio_snapshot)}
         for a in viaje.adicionales.all()
     ]
 
@@ -501,4 +592,101 @@ class GenerarLiquidacionView(APIView):
             preliq.save(update_fields=['estado', 'liquidacion'])
 
         return Response(LiquidacionSerializer(liq).data, status=status.HTTP_201_CREATED)
+
+
+# ── Vistas de Empleado (readonly) ──────────────────────────────────────────────
+
+class MisViajesView(generics.ListAPIView):
+    """
+    GET /api/operaciones/mis-viajes/
+    Devuelve los viajes del proveedor vinculado al usuario autenticado.
+    """
+    serializer_class   = ViajeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        proveedor = getattr(self.request.user, 'proveedor', None)
+        if not proveedor:
+            return Viaje.objects.none()
+        qs = Viaje.objects.filter(proveedor=proveedor).select_related(
+            'salida', 'cliente', 'proveedor', 'tarifa'
+        ).prefetch_related('adicionales__adicional')
+        params = self.request.query_params
+        if params.get('desde'):
+            qs = qs.filter(fecha__gte=params['desde'])
+        if params.get('hasta'):
+            qs = qs.filter(fecha__lte=params['hasta'])
+        if params.get('estado'):
+            qs = qs.filter(estado=params['estado'])
+        return qs
+
+
+class MisLiquidacionesView(generics.ListAPIView):
+    """
+    GET /api/operaciones/mis-liquidaciones/
+    Devuelve las liquidaciones del proveedor vinculado al usuario autenticado.
+    """
+    serializer_class   = LiquidacionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        proveedor = getattr(self.request.user, 'proveedor', None)
+        if not proveedor:
+            return Liquidacion.objects.none()
+        return Liquidacion.objects.filter(proveedor=proveedor).prefetch_related('detalles')
+
+
+class MisPreliquidacionesView(generics.ListAPIView):
+    """
+    GET /api/operaciones/mis-preliquidaciones/
+    Devuelve las preliquidaciones del proveedor vinculado al usuario autenticado.
+    """
+    serializer_class   = PreliquidacionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        proveedor = getattr(self.request.user, 'proveedor', None)
+        if not proveedor:
+            return Preliquidacion.objects.none()
+        return Preliquidacion.objects.filter(proveedor=proveedor).select_related('proveedor').prefetch_related('detalles')
+
+
+class ResponderPreliquidacionView(APIView):
+    """
+    POST /api/operaciones/mis-preliquidaciones/<pk>/responder/
+    El empleado acepta o pide revisión de una preliquidación enviada.
+    Body: { accion: 'confirmar' | 'revisar' }
+    Solo disponible si la preliquidación está en estado 'enviada'
+    y pertenece al proveedor del usuario autenticado.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        proveedor = getattr(request.user, 'proveedor', None)
+        if not proveedor:
+            return Response({'detail': 'Tu usuario no tiene un proveedor vinculado.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            preliq = Preliquidacion.objects.get(pk=pk, proveedor=proveedor)
+        except Preliquidacion.DoesNotExist:
+            return Response({'detail': 'Preliquidación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if preliq.estado != Preliquidacion.Estado.ENVIADA:
+            return Response(
+                {'detail': 'Solo podés responder preliquidaciones en estado "enviada".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        accion = request.data.get('accion')
+        if accion == 'confirmar':
+            preliq.estado = Preliquidacion.Estado.CONFIRMADA
+        elif accion == 'revisar':
+            preliq.estado = Preliquidacion.Estado.PARA_REVISAR
+        else:
+            return Response({'detail': 'accion debe ser "confirmar" o "revisar".'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        preliq.save(update_fields=['estado'])
+        return Response(PreliquidacionSerializer(preliq).data)
 

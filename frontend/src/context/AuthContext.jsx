@@ -21,6 +21,7 @@ export function AuthProvider({ children }) {
     })
     localStorage.setItem('user', JSON.stringify(me))
     setUser(me)
+    return me
   }, [])
 
   const logout = useCallback(() => {

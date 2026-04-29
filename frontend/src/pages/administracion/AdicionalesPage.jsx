@@ -4,7 +4,7 @@ import {
   Box, Typography, Card, CardContent, Button, TextField, CircularProgress,
   Alert, Table, TableBody, TableCell, TableHead, TableRow,
   Dialog, DialogTitle, DialogContent, IconButton, Grid, Autocomplete,
-  InputAdornment,
+  InputAdornment, FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material'
 import { Add as AddIcon, Edit as EditIcon, Close as CloseIcon } from '@mui/icons-material'
 
@@ -29,7 +29,7 @@ const PRECIOS = [
 ]
 
 const INIT = {
-  nombre: '', cliente: null,
+  nombre: '', cliente: null, tipo: 'por_tarifa',
   precio_cat_3ero_sin_semi: '', precio_cat_1: '', precio_cat_2: '', precio_cat_3: '',
   vigente_desde: new Date().toISOString().slice(0, 10),
 }
@@ -65,6 +65,7 @@ export default function AdicionalesPage() {
       setForm({
         nombre: a.nombre,
         cliente: clientes.find(c => c.id === a.cliente) || null,
+        tipo: a.tipo || 'por_tarifa',
         precio_cat_3ero_sin_semi: a.precio_cat_3ero_sin_semi || '',
         precio_cat_1: a.precio_cat_1 || '',
         precio_cat_2: a.precio_cat_2 || '',
@@ -80,10 +81,13 @@ export default function AdicionalesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.cliente) { setError('Seleccioná un cliente.'); return }
+    if (!form.cliente && form.tipo === 'por_tarifa') { setError('Seleccioná un cliente.'); return }
     setSaving(true); setError('')
-    const payload = { nombre: form.nombre, cliente: form.cliente.id, vigente_desde: form.vigente_desde }
-    PRECIOS.forEach(p => { if (form[p.key] !== '') payload[p.key] = form[p.key] })
+    const payload = { nombre: form.nombre, vigente_desde: form.vigente_desde, tipo: form.tipo }
+    if (form.cliente) payload.cliente = form.cliente.id
+    if (form.tipo === 'por_tarifa') {
+      PRECIOS.forEach(p => { if (form[p.key] !== '') payload[p.key] = form[p.key] })
+    }
     try {
       if (editId) await client.patch(`/maestros/adicionales/${editId}/`, payload)
       else await client.post('/maestros/adicionales/', payload)
@@ -123,6 +127,7 @@ export default function AdicionalesPage() {
               <TableRow>
                 <TableCell sx={TH}>Nombre</TableCell>
                 <TableCell sx={TH}>Cliente</TableCell>
+                <TableCell sx={TH}>Tipo</TableCell>
                 <TableCell sx={{ ...TH, textAlign: 'right' }}>3ero S/Semi</TableCell>
                 <TableCell sx={{ ...TH, textAlign: 'right' }}>Cat 1</TableCell>
                 <TableCell sx={{ ...TH, textAlign: 'right' }}>Cat 2</TableCell>
@@ -137,7 +142,12 @@ export default function AdicionalesPage() {
               {lista.map((a) => (
                 <TableRow key={a.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
                   <TableCell sx={{ ...TD, fontWeight: 500, color: '#fff' }}>{a.nombre}</TableCell>
-                  <TableCell sx={TD}>{a.cliente_nombre}</TableCell>
+                  <TableCell sx={TD}>{a.cliente_nombre || <Typography component="span" sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>Global</Typography>}</TableCell>
+                  <TableCell sx={TD}>
+                    {a.tipo === 'al_momento'
+                      ? <Box sx={{ display: 'inline-block', px: 1.2, py: 0.3, borderRadius: 1.5, bgcolor: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 600, fontSize: 11 }}>Al momento</Box>
+                      : <Box sx={{ display: 'inline-block', px: 1.2, py: 0.3, borderRadius: 1.5, bgcolor: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 600, fontSize: 11 }}>Por tarifa</Box>}
+                  </TableCell>
                   <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(a.precio_cat_3ero_sin_semi)}</TableCell>
                   <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(a.precio_cat_1)}</TableCell>
                   <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(a.precio_cat_2)}</TableCell>
@@ -169,22 +179,42 @@ export default function AdicionalesPage() {
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete options={clientes} getOptionLabel={(o) => o.nombre ?? ''}
                   value={form.cliente} onChange={(_, v) => setForm(f => ({ ...f, cliente: v }))}
-                  renderInput={(params) => <TextField {...params} label="Cliente" required size="small" sx={darkField} />}
+                  renderInput={(params) => <TextField {...params} label="Cliente" required={form.tipo === 'por_tarifa'} size="small" sx={darkField} />}
                   sx={AC_SX} />
               </Grid>
-              <Grid size={{ xs: 12 }}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small" sx={darkField}>
+                  <InputLabel>Tipo de adicional</InputLabel>
+                  <Select value={form.tipo} label="Tipo de adicional"
+                    onChange={(e) => setForm(f => ({ ...f, tipo: e.target.value }))}
+                    sx={{ color: '#fff' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#1e293b', color: '#cbd5e1' } } }}>
+                    <MenuItem value="por_tarifa">Por tarifa (tabla de precios)</MenuItem>
+                    <MenuItem value="al_momento">Al momento (precio libre)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField label="Vigente desde" type="date" value={form.vigente_desde}
                   onChange={(e) => setForm(f => ({ ...f, vigente_desde: e.target.value }))}
                   fullWidth required size="small" sx={darkField}
                   slotProps={{ inputLabel: { shrink: true } }} />
               </Grid>
-              {PRECIOS.map((p) => (
+              {form.tipo === 'por_tarifa' && PRECIOS.map((p) => (
                 <Grid key={p.key} size={{ xs: 12, sm: 6 }}>
                   <TextField label={p.label} value={form[p.key]} onChange={setP(p.key)}
                     fullWidth size="small" type="number" sx={darkField}
                     slotProps={{ input: { startAdornment: <InputAdornment position="start"><Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>$</Typography></InputAdornment> } }} />
                 </Grid>
               ))}
+              {form.tipo === 'al_momento' && (
+                <Grid size={{ xs: 12 }}>
+                  <Alert severity="info" variant="outlined"
+                    sx={{ borderRadius: 2, fontSize: 12, py: 0.5, borderColor: 'rgba(59,130,246,0.3)', color: '#93c5fd', bgcolor: 'rgba(59,130,246,0.06)' }}>
+                    El precio se ingresa en el momento de cargar el viaje.
+                  </Alert>
+                </Grid>
+              )}
             </Grid>
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
               <Button type="submit" variant="contained" disabled={saving}

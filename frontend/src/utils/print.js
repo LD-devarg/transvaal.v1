@@ -30,11 +30,12 @@ function buildFilename(periodoDesde, proveedorNombre, tipo) {
   return `${mes}-${anio}-${nombre}-${quincena}-QUINCENA-${tipo}.pdf`
 }
 
-const fmtAdics = (snap) => {
-  if (!snap) return ''
-  if (Array.isArray(snap)) return snap.map((a) => a.nombre || a).join(', ')
-  if (typeof snap === 'string') return snap
-  return ''
+const fmtAdicsHTML = (snap) => {
+  if (!snap || !Array.isArray(snap) || snap.length === 0) return null
+  return snap.map((a) => {
+    const desc = a.descripcion ? ` — ${a.descripcion}` : ''
+    return `<div class="adic-item"><span class="adic-nombre">${a.nombre}${desc}</span><span class="adic-precio">${fmtPeso(a.precio)}</span></div>`
+  }).join('')
 }
 
 // ─── CSS base compartido ──────────────────────────────────────────────────────
@@ -233,6 +234,17 @@ const CSS = `
     color: #94a3b8;
   }
 
+  /* ── Adicionales detail ── */
+  .adic-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #475569;
+    padding: 1px 0;
+  }
+  .adic-nombre { flex: 1; }
+  .adic-precio { font-weight: 600; color: #1e40af; white-space: nowrap; margin-left: 8px; }
+
   /* ── Print ── */
   @media print {
     body { padding: 0; }
@@ -243,8 +255,57 @@ const CSS = `
   }
 `
 
+// ─── Página de gastos ─────────────────────────────────────────────────────────
+function buildGastosPage(gastos) {
+  if (!gastos || gastos.length === 0) return ''
+  const rows = gastos.map((g, i) => {
+    const comb     = g.combustible || {}
+    const bruto    = parseFloat(comb.precio_total_comb || 0)
+    const neto     = parseFloat(g.total_combustible || 0)
+    const varios   = g.varios || []
+    const adelanto = parseFloat(g.adelanto_otros || 0)
+
+    const combustCell = bruto > 0
+      ? `<div>${comb.lts_comb} lts × ${fmtPeso(comb.precio_lts_comb)}/lt</div>
+         <div style="font-size:10px;color:#64748b">Bruto: ${fmtPeso(bruto)} − dto. 20% = <strong>${fmtPeso(neto)}</strong></div>
+         ${g.remito_combustible ? `<div style="font-size:10px;color:#94a3b8">Rem: ${g.remito_combustible}</div>` : ''}`
+      : '<span style="color:#94a3b8;font-style:italic">—</span>'
+
+    const variosCell = varios.length > 0
+      ? varios.map((v) => `<div>${v.descripcion}: <strong>${fmtPeso(v.monto)}</strong></div>`).join('')
+      : '<span style="color:#94a3b8;font-style:italic">—</span>'
+
+    return `<tr>
+      <td style="color:#94a3b8">${i + 1}</td>
+      <td>${fmtFecha(g.fecha_gasto)}</td>
+      <td>${combustCell}</td>
+      <td>${variosCell}</td>
+      <td class="r">${adelanto > 0 ? fmtPeso(adelanto) : '<span style="color:#94a3b8">—</span>'}</td>
+      <td class="amount">${fmtPeso(g.total_gasto)}</td>
+    </tr>`
+  }).join('\n')
+
+  return `
+  <div style="page-break-before:always; padding-top:28px;">
+    <div class="section-title"><span>Gastos del período (${gastos.length} registros)</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px">#</th>
+          <th style="width:80px">Fecha</th>
+          <th>Combustible</th>
+          <th>Varios</th>
+          <th class="r" style="width:90px">Adelanto</th>
+          <th class="r" style="width:100px">Total</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`
+}
+
 // ─── Template HTML ────────────────────────────────────────────────────────────
-function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fechaEmision, extraMeta, rows, totalSinIva, totalConIva, gastosPeriodo, adeudadoFinal }) {
+function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fechaEmision, extraMeta, rows, totalSinIva, totalConIva, gastosPeriodo, adeudadoFinal, gastos = [] }) {
   const now = new Date()
   const fechaGen = now.toLocaleDateString('es-AR')
   const horaGen = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
@@ -303,14 +364,14 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
     </thead>
     <tbody>
       ${rows.map((d, i) => {
-        const adics = fmtAdics(d.adicionales_snapshot)
+        const adicsHTML = fmtAdicsHTML(d.adicionales_snapshot)
         return `<tr>
         <td style="color:#94a3b8">${i + 1}</td>
         <td>${fmtFecha(d.fecha_viaje)}</td>
         <td>${d.cliente_snapshot || '-'}</td>
         <td>${d.salida_snapshot || '-'}</td>
         <td class="${d.remito_snapshot ? '' : 'muted'}">${d.remito_snapshot || '-'}</td>
-        <td class="${adics ? '' : 'muted'}" style="font-size:10.5px">${adics || '-'}</td>
+        <td>${adicsHTML || '<span class="muted">—</span>'}</td>
         <td class="amount">${fmtPeso(d.tarifa_sin_iva)}</td>
       </tr>`
       }).join('\n      ')}
@@ -348,6 +409,8 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
     </div>
   </div>
 
+  ${buildGastosPage(gastos)}
+
   <div class="doc-footer">
     <span>Generado el ${fechaGen} a las ${horaGen}</span>
     <span>${EMPRESA} &mdash; Documento interno</span>
@@ -362,7 +425,7 @@ function openAndPrint(html, title) {
   const w = window.open('', '_blank', 'width=960,height=720,toolbar=0,menubar=0')
   if (!w) {
     alert('El navegador bloqueó la ventana emergente. Habilitá los pop-ups para este sitio.')
-    return
+    return null
   }
   w.document.write(html)
   w.document.close()
@@ -411,20 +474,22 @@ async function uploadToDrive(html, filename, folderId) {
     // Enviar al GAS
     const res = await fetch(GAS_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ pdf_b64: base64, filename, folder_id: folderId }),
     })
     const data = await res.json()
     if (!data.ok) {
       console.error('GAS error:', data.error)
+      return data
     }
+    return data
   } catch (err) {
     console.error('Error al subir a Drive:', err)
+    return { ok: false, error: err.message || 'Error al subir a Drive.' }
   }
 }
 
 // ─── Preliquidación ───────────────────────────────────────────────────────────
-export function printPreliquidacion(preliq) {
+function buildPreliquidacionDocument(preliq) {
   const estadoLabels = {
     pendiente: 'Pendiente', enviada: 'Enviada',
     para_revisar: 'Para revisar', confirmada: 'Confirmada', liquidada: 'Liquidada',
@@ -448,9 +513,23 @@ export function printPreliquidacion(preliq) {
     totalConIva:    preliq.total_con_iva,
     gastosPeriodo:  preliq.gastos_periodo,
     adeudadoFinal:  preliq.adeudado_final,
+    gastos:         preliq.gastos || [],
   })
 
   const filename = buildFilename(preliq.periodo_desde, preliq.proveedor_nombre, 'PRELIQ')
+  return { html, filename }
+}
+
+export async function savePreliquidacionToDrive(preliq) {
+  if (!preliq.carpeta_drive_id) {
+    return { ok: false, error: 'La preliquidacion no tiene carpeta de Drive configurada.' }
+  }
+  const { html, filename } = buildPreliquidacionDocument(preliq)
+  return uploadToDrive(html, filename, preliq.carpeta_drive_id)
+}
+
+export function printPreliquidacion(preliq) {
+  const { html, filename } = buildPreliquidacionDocument(preliq)
   openAndPrint(html, filename)
   if (preliq.carpeta_drive_id) {
     uploadToDrive(html, filename, preliq.carpeta_drive_id)
@@ -482,6 +561,7 @@ export function printLiquidacion(liq) {
     totalConIva:    liq.total_con_iva,
     gastosPeriodo:  liq.gastos_periodo,
     adeudadoFinal:  liq.adeudado_final,
+    gastos:         liq.gastos || [],
   })
 
   const filename = buildFilename(liq.periodo_desde, liq.proveedor_nombre, 'LIQUID')

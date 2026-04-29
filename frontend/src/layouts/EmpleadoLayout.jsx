@@ -17,6 +17,7 @@ import {
   DirectionsCar as ViajesIcon,
   Folder as DocIcon,
   AccountBalance as LiquidacionIcon,
+  Receipt as PreliqIcon,
   Person as PerfilIcon,
   Logout as LogoutIcon,
   LocalShipping as LogoIcon,
@@ -25,10 +26,11 @@ import {
 const SIDEBAR_WIDTH = 240
 
 const navItems = [
-  { label: 'Mis Viajes', icon: <ViajesIcon />, to: '/empleado/viajes' },
-  { label: 'Documentación', icon: <DocIcon />, to: '/empleado/documentacion' },
-  { label: 'Mis Liquidaciones', icon: <LiquidacionIcon />, to: '/empleado/liquidaciones' },
-  { label: 'Mi Perfil', icon: <PerfilIcon />, to: '/empleado/perfil' },
+  { label: 'Mis Viajes',          icon: <ViajesIcon />,   to: '/empleado/viajes' },
+  { label: 'Preliquidaciones',    icon: <PreliqIcon />,   to: '/empleado/preliquidaciones' },
+  { label: 'Mis Liquidaciones',   icon: <LiquidacionIcon />, to: '/empleado/liquidaciones' },
+  { label: 'Documentación',       icon: <DocIcon />,      to: '/empleado/documentacion' },
+  { label: 'Mi Perfil',           icon: <PerfilIcon />,   to: '/empleado/perfil' },
 ]
 
 export default function EmpleadoLayout() {
@@ -41,7 +43,7 @@ export default function EmpleadoLayout() {
   }
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f1f5f9' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0f172a' }}>
       {/* Sidebar */}
       <Drawer
         variant="permanent"
@@ -98,11 +100,7 @@ export default function EmpleadoLayout() {
                   </ListItemIcon>
                   <ListItemText
                     primary={item.label}
-                    primaryTypographyProps={{
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: isActive ? '#fff' : 'rgba(255,255,255,0.85)',
-                    }}
+                    slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 500, color: isActive ? '#fff' : 'rgba(255,255,255,0.85)' } } }}
                   />
                 </ListItemButton>
               )}
@@ -138,7 +136,7 @@ export default function EmpleadoLayout() {
       </Drawer>
 
       {/* Main content */}
-      <Box component="main" sx={{ flex: 1, p: 3, overflow: 'auto' }}>
+      <Box component="main" sx={{ flex: 1, p: 3, overflow: 'auto', bgcolor: '#0f172a' }}>
         <Outlet />
       </Box>
     </Box>
