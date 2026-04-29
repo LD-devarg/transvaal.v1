@@ -1,0 +1,60 @@
+# railway.toml — configuración de servicios para Railway
+# Documentación: https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "nixpacks"
+
+# ─── Servicio Backend (Django/Daphne) ────────────────────────────────────────
+# En Railway: crear servicio apuntando a la carpeta /backend
+# Build command: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
+# Start command: (lee del Procfile → proceso "web")
+
+# Variables de entorno requeridas en Railway (panel → Variables):
+#
+# DJANGO_SETTINGS_MODULE = config.settings.prod
+# SECRET_KEY             = <generar con: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())">
+# ALLOWED_HOSTS          = tu-backend.up.railway.app
+# CORS_ALLOWED_ORIGINS   = https://tu-frontend.up.railway.app
+#
+# — Base de datos (Supabase) —
+# DB_NAME     = postgres
+# DB_USER     = postgres
+# DB_PASSWORD = <password de Supabase>
+# DB_HOST     = db.xxxx.supabase.co
+# DB_PORT     = 5432
+#
+# — Redis (agregar servicio Redis en Railway) —
+# REDIS_URL = redis://default:password@redis.railway.internal:6379
+#
+# — Email Gmail —
+# EMAIL_HOST_USER     = tucuenta@gmail.com
+# EMAIL_HOST_PASSWORD = <App Password de Google>
+#
+# — Telegram Bot (próxima feature) —
+# TELEGRAM_BOT_TOKEN = <token de BotFather>
+# TELEGRAM_CHAT_ID   = <chat_id del grupo/canal>
+#
+# — S3 (opcional, solo si USE_S3=true) —
+# USE_S3                  = false
+# AWS_ACCESS_KEY_ID       = ...
+# AWS_SECRET_ACCESS_KEY   = ...
+# AWS_STORAGE_BUCKET_NAME = ...
+# AWS_S3_REGION_NAME      = us-east-1
+
+# ─── Servicio Frontend (Vite/React) ──────────────────────────────────────────
+# En Railway: crear servicio apuntando a la carpeta /frontend
+# Build command: npm install && npm run build
+# Start command: (Railway sirve /dist automáticamente con su static server)
+#
+# Variables de entorno requeridas:
+# VITE_API_URL = https://tu-backend.up.railway.app/api
+# VITE_GAS_URL = https://script.google.com/macros/s/.../exec
+
+# ─── Servicio Celery Worker (opcional) ───────────────────────────────────────
+# Mismo repo que backend, mismo build, Start command distinto:
+# celery -A config worker -l info -c 2
+# (mismas variables de entorno que el backend)
+
+# ─── Servicio Celery Beat (opcional) ─────────────────────────────────────────
+# Start command:
+# celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
