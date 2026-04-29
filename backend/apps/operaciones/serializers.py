@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Viaje, ViajeAdicional,
+    Gasto,
     Preliquidacion, PreliquidacionDetalle,
     Liquidacion, LiquidacionDetalle,
 )
@@ -29,10 +30,10 @@ class ViajeSerializer(serializers.ModelSerializer):
             'cliente', 'cliente_nombre',
             'proveedor', 'proveedor_nombre',
             'tarifa', 'precio_tarifa',
-            'remito', 'adicionales',
+            'remito', 'estado', 'adicionales',
             'preliquidacion', 'liquidacion',
         )
-        read_only_fields = ('preliquidacion', 'liquidacion')
+        read_only_fields = ('estado', 'preliquidacion', 'liquidacion')
 
 
 class ViajeWriteSerializer(serializers.ModelSerializer):
@@ -67,6 +68,26 @@ class ViajeWriteSerializer(serializers.ModelSerializer):
             ViajeAdicional.objects.create(viaje=viaje, adicional=adicional)
 
 
+# ── Gasto ──────────────────────────────────────────────────────────────────────
+
+class GastoSerializer(serializers.ModelSerializer):
+    proveedor_nombre  = serializers.CharField(source='proveedor.nombre', read_only=True)
+    total_combustible = serializers.FloatField(read_only=True)
+    total_varios      = serializers.FloatField(read_only=True)
+    total_gasto       = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model  = Gasto
+        fields = (
+            'id', 'fecha_gasto', 'proveedor', 'proveedor_nombre',
+            'varios', 'adelanto_otros',
+            'combustible', 'remito_combustible',
+            'preliquidacion', 'liquidacion',
+            'total_combustible', 'total_varios', 'total_gasto',
+        )
+        read_only_fields = ('preliquidacion', 'liquidacion')
+
+
 # ── Preliquidacion ─────────────────────────────────────────────────────────────
 
 class PreliquidacionDetalleSerializer(serializers.ModelSerializer):
@@ -81,14 +102,15 @@ class PreliquidacionDetalleSerializer(serializers.ModelSerializer):
 
 
 class PreliquidacionSerializer(serializers.ModelSerializer):
-    detalles          = PreliquidacionDetalleSerializer(many=True, read_only=True)
-    proveedor_nombre  = serializers.CharField(source='proveedor.nombre', read_only=True)
-    estado_display    = serializers.CharField(source='get_estado_display', read_only=True)
+    detalles             = PreliquidacionDetalleSerializer(many=True, read_only=True)
+    proveedor_nombre     = serializers.CharField(source='proveedor.nombre', read_only=True)
+    carpeta_drive_id     = serializers.CharField(source='proveedor.carpeta_drive_id', read_only=True)
+    estado_display       = serializers.CharField(source='get_estado_display', read_only=True)
 
     class Meta:
         model  = Preliquidacion
         fields = (
-            'id', 'fecha', 'proveedor', 'proveedor_nombre',
+            'id', 'fecha', 'proveedor', 'proveedor_nombre', 'carpeta_drive_id',
             'periodo_desde', 'periodo_hasta',
             'gastos_periodo', 'total_sin_iva', 'total_con_iva', 'adeudado_final',
             'estado', 'estado_display', 'liquidacion', 'detalles',
@@ -110,14 +132,15 @@ class LiquidacionDetalleSerializer(serializers.ModelSerializer):
 
 
 class LiquidacionSerializer(serializers.ModelSerializer):
-    detalles         = LiquidacionDetalleSerializer(many=True, read_only=True)
-    proveedor_nombre = serializers.CharField(source='proveedor.nombre', read_only=True)
-    estado_display   = serializers.CharField(source='get_estado_pago_display', read_only=True)
+    detalles             = LiquidacionDetalleSerializer(many=True, read_only=True)
+    proveedor_nombre     = serializers.CharField(source='proveedor.nombre', read_only=True)
+    carpeta_drive_id     = serializers.CharField(source='proveedor.carpeta_drive_id', read_only=True)
+    estado_display       = serializers.CharField(source='get_estado_pago_display', read_only=True)
 
     class Meta:
         model  = Liquidacion
         fields = (
-            'id', 'fecha', 'proveedor', 'proveedor_nombre',
+            'id', 'fecha', 'proveedor', 'proveedor_nombre', 'carpeta_drive_id',
             'periodo_desde', 'periodo_hasta',
             'gastos_periodo', 'total_sin_iva', 'total_con_iva', 'adeudado_final',
             'estado_pago', 'estado_display', 'factura', 'detalles',

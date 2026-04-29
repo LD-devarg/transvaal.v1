@@ -4,8 +4,8 @@ from django.utils import timezone
 
 class Cliente(models.Model):
     nombre = models.CharField(max_length=150)
-    cuit   = models.CharField(max_length=13, unique=True)
-    email  = models.EmailField(blank=True)
+    cuit   = models.CharField(max_length=13, unique=True, blank=True, null=True)
+    email  = models.EmailField(blank=True, null=True)
 
     class Meta:
         ordering = ['nombre']
@@ -21,11 +21,12 @@ class Proveedor(models.Model):
         CAT_2            = '2',             'Categoría 2'
         CAT_3            = '3',             'Categoría 3'
 
-    nombre            = models.CharField(max_length=150)
-    chofer            = models.CharField(max_length=150, blank=True)
-    email             = models.EmailField(blank=True)
-    categoria         = models.CharField(max_length=20, choices=Categoria.choices)
-    datos_transporte  = models.JSONField(default=dict, blank=True)  # patente, tipo vehículo, etc.
+    nombre             = models.CharField(max_length=150)
+    chofer             = models.CharField(max_length=150, blank=True)
+    email              = models.EmailField(blank=True, null=True)
+    categoria          = models.CharField(max_length=20, choices=Categoria.choices)
+    datos_transporte   = models.JSONField(default=dict, blank=True, null=True)  # patente, tipo vehículo, etc.
+    carpeta_drive_id   = models.CharField(max_length=100, blank=True, null=True, help_text='ID de carpeta en Google Drive')
 
     class Meta:
         ordering = ['nombre']
@@ -37,10 +38,11 @@ class Proveedor(models.Model):
 class Salida(models.Model):
     ida    = models.CharField(max_length=100)
     vuelta = models.CharField(max_length=100)
+    cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name='salidas')
 
     class Meta:
-        ordering            = ['ida', 'vuelta']
-        unique_together     = [('ida', 'vuelta')]
+        ordering        = ['ida', 'vuelta']
+        unique_together = [('ida', 'vuelta', 'cliente')]
 
     @property
     def descripcion(self):

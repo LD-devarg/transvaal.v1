@@ -40,9 +40,15 @@ class ProveedorDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class SalidaListCreateView(generics.ListCreateAPIView):
-    queryset           = Salida.objects.all()
     serializer_class   = SalidaSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Salida.objects.select_related('cliente').all()
+        cliente = self.request.query_params.get('cliente')
+        if cliente:
+            qs = qs.filter(cliente_id=cliente)
+        return qs
 
 
 class SalidaDetailView(generics.RetrieveUpdateDestroyAPIView):

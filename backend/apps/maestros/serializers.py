@@ -13,15 +13,16 @@ class ProveedorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Proveedor
-        fields = ('id', 'nombre', 'chofer', 'email', 'categoria', 'categoria_display', 'datos_transporte')
+        fields = ('id', 'nombre', 'chofer', 'email', 'categoria', 'categoria_display', 'datos_transporte', 'carpeta_drive_id')
 
 
 class SalidaSerializer(serializers.ModelSerializer):
-    descripcion = serializers.CharField(read_only=True)
+    descripcion    = serializers.CharField(read_only=True)
+    cliente_nombre = serializers.CharField(source='cliente.nombre', read_only=True)
 
     class Meta:
         model  = Salida
-        fields = ('id', 'ida', 'vuelta', 'descripcion')
+        fields = ('id', 'ida', 'vuelta', 'descripcion', 'cliente', 'cliente_nombre')
 
 
 class TarifaSerializer(serializers.ModelSerializer):

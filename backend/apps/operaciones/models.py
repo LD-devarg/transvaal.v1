@@ -15,7 +15,7 @@ class Viaje(models.Model):
     cliente   = models.ForeignKey(Cliente,  on_delete=models.PROTECT, related_name='viajes')
     proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name='viajes')
     tarifa    = models.ForeignKey(Tarifa,   on_delete=models.PROTECT, related_name='viajes')
-    remito    = models.PositiveIntegerField(null=True, blank=True)
+    remito    = models.CharField(null=True, blank=True, max_length=20)
     estado    = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
 
     # FK inversas — se asignan al preliquidar/liquidar
@@ -36,6 +36,12 @@ class Viaje(models.Model):
 
     def precio_tarifa(self):
         return self.tarifa.precio_para_proveedor(self.proveedor)
+
+    def save(self, *args, **kwargs):
+        # Auto-habilitar: si se carga remito y el viaje está pendiente, pasa a habilitado.
+        if self.remito and self.estado == 'pendiente':
+            self.estado = 'habilitado'
+        super().save(*args, **kwargs)
 
 
 class ViajeAdicional(models.Model):
@@ -64,9 +70,11 @@ class ViajeAdicional(models.Model):
 
 class Preliquidacion(models.Model):
     class Estado(models.TextChoices):
-        BORRADOR   = 'borrador',   'Borrador'
-        CONFIRMADA = 'confirmada', 'Confirmada'
-        LIQUIDADA  = 'liquidada',  'Liquidada'
+        PENDIENTE    = 'pendiente',    'Pendiente'
+        ENVIADA      = 'enviada',      'Enviada'
+        PARA_REVISAR = 'para_revisar', 'Para revisar'
+        CONFIRMADA   = 'confirmada',   'Confirmada'
+        LIQUIDADA    = 'liquidada',    'Liquidada'
 
     fecha          = models.DateField()
     proveedor      = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name='preliquidaciones')
@@ -76,7 +84,7 @@ class Preliquidacion(models.Model):
     total_sin_iva  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_con_iva  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     adeudado_final = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    estado         = models.CharField(max_length=15, choices=Estado.choices, default=Estado.BORRADOR)
+    estado         = models.CharField(max_length=15, choices=Estado.choices, default=Estado.PENDIENTE)
     liquidacion    = models.ForeignKey(
         'Liquidacion', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='preliquidaciones'
@@ -98,8 +106,8 @@ class PreliquidacionDetalle(models.Model):
     chofer_snapshot  = models.CharField(max_length=150, blank=True)
     cliente_snapshot = models.CharField(max_length=150)
     salida_snapshot  = models.CharField(max_length=200)
-    remito_snapshot  = models.PositiveIntegerField(null=True, blank=True)
-    adicionales_snapshot = models.JSONField(default=list, blank=True)
+    remito_snapshot  = models.CharField(max_length=20, null=True, blank=True)
+    adicionales_snapshot = models.JSONField(default=list, blank=True, null=True)
 
     tarifa_sin_iva   = models.DecimalField(max_digits=12, decimal_places=2)
     tarifa_con_iva   = models.DecimalField(max_digits=12, decimal_places=2)
@@ -147,8 +155,8 @@ class LiquidacionDetalle(models.Model):
     chofer_snapshot  = models.CharField(max_length=150, blank=True)
     cliente_snapshot = models.CharField(max_length=150)
     salida_snapshot  = models.CharField(max_length=200)
-    remito_snapshot  = models.PositiveIntegerField(null=True, blank=True)
-    adicionales_snapshot = models.JSONField(default=list, blank=True)
+    remito_snapshot  = models.CharField(max_length=20, null=True, blank=True)
+    adicionales_snapshot = models.JSONField(default=list, blank=True, null=True)
 
     tarifa_sin_iva   = models.DecimalField(max_digits=12, decimal_places=2)
     tarifa_con_iva   = models.DecimalField(max_digits=12, decimal_places=2)
@@ -186,15 +194,19 @@ class Gasto(models.Model):
         Proveedor, on_delete=models.PROTECT, related_name='gastos'
     )
     varios             = models.JSONField(
-        default=list, blank=True,
+        default=list, blank=True, null=True,
         help_text='Lista de {descripcion, monto}'
     )
     adelanto_otros     = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     combustible        = models.JSONField(
-        default=dict, blank=True,
+        default=dict, blank=True, null=True,
         help_text='{lts_comb, precio_lts_comb, precio_total_comb}'
     )
-    remito_combustible = models.CharField(max_length=100, blank=True)
+    remito_combustible = models.CharField(max_length=100, blank=True, null=True)
+    preliquidacion     = models.ForeignKey(
+        'Preliquidacion', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='gastos'
+    )
     liquidacion        = models.ForeignKey(
         'Liquidacion', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='gastos'

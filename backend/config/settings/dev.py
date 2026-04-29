@@ -3,7 +3,7 @@ from decouple import config
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.42']
 
 # ── Base de datos (local) ──────────────────────────────────────────────────────
 DATABASES = {
@@ -36,9 +36,11 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # ── CORS (React dev server) ────────────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',  # Vite
-    'http://localhost:5174',  # Vite (puerto alternativo)
-    'http://localhost:3000',  # CRA
+    'http://localhost:5173',       # Vite
+    'http://localhost:5174',       # Vite (puerto alternativo)
+    'http://localhost:3000',       # CRA
+    'http://192.168.1.42:5173',    # Vite (IP de red local)
+    'http://192.168.1.42:5174',
 ]
 
 # ── Debug Toolbar ──────────────────────────────────────────────────────────────
