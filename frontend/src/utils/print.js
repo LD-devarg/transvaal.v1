@@ -443,9 +443,10 @@ async function uploadToDrive(html, filename, folderId) {
   }
 
   try {
-    // Crear un elemento temporal fuera del DOM visible
+    // Crear un elemento temporal renderizable. Si queda fuera del viewport,
+    // html2canvas puede generar un PDF en blanco en algunos navegadores.
     const container = document.createElement('div')
-    container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff'
+    container.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#fff;z-index:-1;pointer-events:none'
     container.innerHTML = html
     document.body.appendChild(container)
 
@@ -455,7 +456,7 @@ async function uploadToDrive(html, filename, folderId) {
         margin:      [10, 10, 10, 10],
         filename,
         image:       { type: 'jpeg', quality: 0.92 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
+        html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 794 },
         jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
       })
       .from(container)

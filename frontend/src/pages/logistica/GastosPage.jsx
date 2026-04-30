@@ -3,7 +3,7 @@ import client from '../../api/client'
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button,
   Alert, CircularProgress, Autocomplete, Divider, InputAdornment,
-  IconButton, Table, TableBody, TableCell, TableHead, TableRow,
+  IconButton, Table, TableBody, TableCell, TableHead, TableRow, Collapse,
   Dialog, DialogTitle, DialogContent, FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material'
 import {
@@ -13,6 +13,8 @@ import {
   AttachMoney as MoneyIcon, PlaylistAdd as VariosIcon,
   CheckCircleOutlined as CheckIcon, FilterList as FilterIcon,
   Close as CloseIcon,
+  KeyboardArrowDown as ExpandMoreIcon,
+  KeyboardArrowUp as ExpandLessIcon,
 } from '@mui/icons-material'
 
 const fmtPeso = (val) =>
@@ -20,6 +22,8 @@ const fmtPeso = (val) =>
 
 const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
+
+const todayISO = () => new Date().toISOString().slice(0, 10)
 
 const ESTADOS_EDITABLES = ['pendiente', 'para_revisar']
 const canEdit = (g) =>
@@ -70,7 +74,7 @@ const SectionLabel = ({ children }) => (
 )
 
 const INITIAL_FORM = {
-  fecha_gasto: new Date().toISOString().slice(0, 10),
+  fecha_gasto: todayISO(),
   proveedor: null,
   lts_comb: '',
   precio_lts_comb: '',
@@ -98,7 +102,7 @@ function GastoForm({ onSuccess, proveedores, editGasto = null }) {
         varios:             (editGasto.varios || []).map((v) => ({ descripcion: v.descripcion, monto: String(v.monto) })),
       })
     } else {
-      setForm(INITIAL_FORM)
+      setForm({ ...INITIAL_FORM, fecha_gasto: todayISO() })
     }
   }, [editGasto, proveedores])
 
@@ -286,13 +290,14 @@ export default function GastosPage() {
   const [gastos, setGastos]           = useState([])
   const [loadingList, setLoadingList] = useState(false)
 
-  const [fDesde, setFDesde]         = useState('')
-  const [fHasta, setFHasta]         = useState('')
+  const [fDesde, setFDesde]         = useState(todayISO)
+  const [fHasta, setFHasta]         = useState(todayISO)
   const [fProveedor, setFProveedor] = useState(null)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editGasto, setEditGasto] = useState(null)
   const [success, setSuccess]     = useState('')
+  const [expandedGasto, setExpandedGasto] = useState(null)
 
   useEffect(() => {
     client.get('/maestros/proveedores/').then((r) => setProveedores(r.data))
@@ -380,7 +385,7 @@ export default function GastosPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 'auto' }}>
               <Button size="small" sx={{ color: '#60a5fa', fontSize: 12, textTransform: 'none', height: 40 }}
-                onClick={() => { setFDesde(''); setFHasta(''); setFProveedor(null) }}>
+                onClick={() => { setFDesde(todayISO()); setFHasta(todayISO()); setFProveedor(null) }}>
                 Limpiar
               </Button>
             </Grid>
@@ -425,29 +430,109 @@ export default function GastosPage() {
                     </TableCell>
                   </TableRow>
                 )}
-                {!loadingList && gastos.map((g) => (
-                  <TableRow key={g.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
-                    <TableCell sx={TD}>{fmtFecha(g.fecha_gasto)}</TableCell>
-                    <TableCell sx={TD}>{g.proveedor_nombre}</TableCell>
-                    <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(g.total_combustible)}</TableCell>
-                    <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(g.total_varios)}</TableCell>
-                    <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(g.adelanto_otros)}</TableCell>
-                    <TableCell sx={{ ...TD, textAlign: 'right', fontWeight: 700, color: '#f1f5f9' }}>{fmtPeso(g.total_gasto)}</TableCell>
-                    <TableCell sx={TD}>
-                      {g.preliquidacion
-                        ? <PreliqChip estado={g.preliquidacion_estado} />
-                        : <Typography sx={{ color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>-</Typography>}
-                    </TableCell>
-                    <TableCell sx={TD}>
-                      {canEdit(g) && (
-                        <IconButton size="small" onClick={() => abrirEditar(g)}
-                          sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
-                          <EditIcon sx={{ fontSize: 15 }} />
-                        </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {!loadingList && gastos.map((g) => {
+                  const open = expandedGasto === g.id
+                  const comb = g.combustible || {}
+                  return (
+                    <>
+                      <TableRow
+                        key={g.id}
+                        onClick={() => setExpandedGasto(open ? null : g.id)}
+                        sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}
+                      >
+                        <TableCell sx={TD}>{fmtFecha(g.fecha_gasto)}</TableCell>
+                        <TableCell sx={TD}>{g.proveedor_nombre}</TableCell>
+                        <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(g.total_combustible)}</TableCell>
+                        <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(g.total_varios)}</TableCell>
+                        <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(g.adelanto_otros)}</TableCell>
+                        <TableCell sx={{ ...TD, textAlign: 'right', fontWeight: 700, color: '#f1f5f9' }}>{fmtPeso(g.total_gasto)}</TableCell>
+                        <TableCell sx={TD}>
+                          {g.preliquidacion
+                            ? <PreliqChip estado={g.preliquidacion_estado} />
+                            : <Typography sx={{ color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>-</Typography>}
+                        </TableCell>
+                        <TableCell sx={TD}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {canEdit(g) && (
+                              <IconButton
+                                size="small"
+                                onClick={(e) => { e.stopPropagation(); abrirEditar(g) }}
+                                sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}
+                              >
+                                <EditIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                            )}
+                            <IconButton size="small" sx={{ color: 'rgba(255,255,255,0.25)' }}>
+                              {open ? <ExpandLessIcon sx={{ fontSize: 17 }} /> : <ExpandMoreIcon sx={{ fontSize: 17 }} />}
+                            </IconButton>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow key={`det-${g.id}`}>
+                        <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
+                          <Collapse in={open} timeout="auto" unmountOnExit>
+                            <Box sx={{ bgcolor: 'rgba(0,0,0,0.2)', px: 3, py: 2, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr 1fr' }, gap: 2 }}>
+                                <Box>
+                                  <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', mb: 1 }}>
+                                    Combustible
+                                  </Typography>
+                                  {comb.lts_comb ? (
+                                    <>
+                                      <Typography sx={{ color: '#cbd5e1', fontSize: 12 }}>
+                                        {comb.lts_comb} lts x {fmtPeso(comb.precio_lts_comb)} / lt
+                                      </Typography>
+                                      <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, mt: 0.4 }}>
+                                        Bruto: {fmtPeso(comb.precio_total_comb)} · Neto con dto. 20%: {fmtPeso(g.total_combustible)}
+                                      </Typography>
+                                      <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, mt: 0.4 }}>
+                                        Remito: {g.remito_combustible || '-'}
+                                      </Typography>
+                                    </>
+                                  ) : (
+                                    <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>Sin combustible.</Typography>
+                                  )}
+                                </Box>
+
+                                <Box>
+                                  <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', mb: 1 }}>
+                                    Varios
+                                  </Typography>
+                                  {(g.varios || []).length === 0 ? (
+                                    <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>Sin items varios.</Typography>
+                                  ) : (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      {(g.varios || []).map((v, idx) => (
+                                        <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                                          <Typography sx={{ color: '#cbd5e1', fontSize: 12 }}>{v.descripcion || `Item ${idx + 1}`}</Typography>
+                                          <Typography sx={{ color: '#93c5fd', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtPeso(v.monto)}</Typography>
+                                        </Box>
+                                      ))}
+                                    </Box>
+                                  )}
+                                </Box>
+
+                                <Box>
+                                  <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', mb: 1 }}>
+                                    Resumen
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.6 }}>
+                                    <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>Adelanto / Otros</Typography>
+                                    <Typography sx={{ color: '#cbd5e1', fontSize: 12 }}>{fmtPeso(g.adelanto_otros)}</Typography>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 0.8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                    <Typography sx={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>Total gasto</Typography>
+                                    <Typography sx={{ color: '#f87171', fontSize: 13, fontWeight: 800 }}>{fmtPeso(g.total_gasto)}</Typography>
+                                  </Box>
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Collapse>
+                        </TableCell>
+                      </TableRow>
+                    </>
+                  )
+                })}
               </TableBody>
             </Table>
           </Box>

@@ -26,6 +26,8 @@ const fmtPeso = (val) =>
 const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
+const todayISO = () => new Date().toISOString().slice(0, 10)
+
 const ESTADO_CHIP = {
   pendiente:    { label: 'Pendiente',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
   enviada:      { label: 'Enviada',      color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
@@ -94,8 +96,8 @@ function calcTotales(selectedViajes, selectedGastos) {
 export default function PreliquidacionesPage() {
   const [proveedores, setProveedores] = useState([])
   const [proveedor, setProveedor]     = useState(null)
-  const [desde, setDesde]             = useState('')
-  const [hasta, setHasta]             = useState('')
+  const [desde, setDesde]             = useState(todayISO)
+  const [hasta, setHasta]             = useState(todayISO)
 
   const [viajes, setViajes]           = useState([])
   const [gastos, setGastos]           = useState([])
@@ -520,6 +522,40 @@ export default function PreliquidacionesPage() {
                                           <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(d.tarifa_con_iva)}</TableCell>
                                         </TableRow>
                                       ))}
+                                    </TableBody>
+                                  </Table>
+
+                                  <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10, mt: 2.5 }}>
+                                    Gastos descontados
+                                  </Typography>
+                                  <Table size="small" sx={{ mt: 1 }}>
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell sx={TH}>Fecha</TableCell>
+                                        <TableCell sx={TH}>Combustible</TableCell>
+                                        <TableCell sx={TH}>Varios</TableCell>
+                                        <TableCell sx={TH}>Adelanto</TableCell>
+                                        <TableCell sx={{ ...TH, textAlign: 'right' }}>Total</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {(p.gastos || []).length === 0 ? (
+                                        <TableRow>
+                                          <TableCell colSpan={5} sx={{ ...TD, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>
+                                            Sin gastos asociados.
+                                          </TableCell>
+                                        </TableRow>
+                                      ) : (
+                                        (p.gastos || []).map((g) => (
+                                          <TableRow key={g.id}>
+                                            <TableCell sx={TD}>{fmtFecha(g.fecha_gasto)}</TableCell>
+                                            <TableCell sx={TD}>{fmtPeso(g.total_combustible)}</TableCell>
+                                            <TableCell sx={TD}>{fmtPeso(g.total_varios)}</TableCell>
+                                            <TableCell sx={TD}>{fmtPeso(g.adelanto_otros)}</TableCell>
+                                            <TableCell sx={{ ...TD, textAlign: 'right', color: '#f87171', fontWeight: 600 }}>{fmtPeso(g.total_gasto)}</TableCell>
+                                          </TableRow>
+                                        ))
+                                      )}
                                     </TableBody>
                                   </Table>
                                 </Box>

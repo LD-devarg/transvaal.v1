@@ -230,10 +230,23 @@ class Gasto(models.Model):
     def __str__(self):
         return f"Gasto {self.proveedor} | {self.fecha_gasto}"
 
+    def _precio_combustible_bruto(self):
+        combustible = self.combustible or {}
+        lts = combustible.get('lts_comb')
+        precio_lts = combustible.get('precio_lts_comb')
+        if lts not in (None, '') and precio_lts not in (None, ''):
+            return round(float(lts) * float(precio_lts), 2)
+        return round(float(combustible.get('precio_total_comb') or 0), 2)
+
+    def save(self, *args, **kwargs):
+        if self.combustible:
+            self.combustible['precio_total_comb'] = self._precio_combustible_bruto()
+        super().save(*args, **kwargs)
+
     @property
     def total_combustible(self):
-        """Aplica 20% de descuento sobre precio_total_comb."""
-        precio_bruto = (self.combustible or {}).get('precio_total_comb', 0)
+        """Aplica 20% de descuento sobre el bruto de litros * precio por litro."""
+        precio_bruto = self._precio_combustible_bruto()
         return round(float(precio_bruto) * 0.8, 2)
 
     @property

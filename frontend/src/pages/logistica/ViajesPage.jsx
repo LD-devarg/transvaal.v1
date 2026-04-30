@@ -52,6 +52,8 @@ const fmtPeso = (val) =>
 const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
+const todayISO = () => new Date().toISOString().slice(0, 10)
+
 const darkField = {
   '& .MuiOutlinedInput-root': {
     color: '#fff', fontSize: 13,
@@ -95,7 +97,7 @@ const SectionLabel = ({ children }) => (
 )
 
 const INITIAL_FORM = {
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: todayISO(),
   cliente: '', salida: '', proveedor: '', remito: '',
   adicionales: [], // [{ adicional_id: number|null, precio_manual: '', descripcion: '' }]
 }
@@ -123,7 +125,7 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
         })),
       })
     } else {
-      setForm(INITIAL_FORM)
+      setForm({ ...INITIAL_FORM, fecha: todayISO() })
     }
   }, [editViaje])
 
@@ -212,7 +214,7 @@ function ViajeForm({ onSuccess, clientes, proveedores, todosAdicionales, editVia
         await client.patch(`/operaciones/viajes/${editViaje.id}/`, payload)
       } else {
         await client.post('/operaciones/viajes/', payload)
-        setForm(INITIAL_FORM); setTarifa(null)
+        setForm({ ...INITIAL_FORM, fecha: todayISO() }); setTarifa(null)
       }
       onSuccess()
     } catch (err) {
@@ -419,8 +421,8 @@ export default function ViajesPage() {
   const [page, setPage]           = useState(1)
   const [loadingList, setLoadingList] = useState(false)
 
-  const [fDesde, setFDesde]     = useState('')
-  const [fHasta, setFHasta]     = useState('')
+  const [fDesde, setFDesde]     = useState(todayISO)
+  const [fHasta, setFHasta]     = useState(todayISO)
   const [fChofer, setFChofer]   = useState('')
   const [fCliente, setFCliente] = useState(null)
   const [fEstado, setFEstado]   = useState('')
@@ -583,7 +585,7 @@ export default function ViajesPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 'auto' }}>
               <Button size="small" sx={{ color: '#60a5fa', fontSize: 12, textTransform: 'none', height: 40 }}
-                onClick={() => { setFDesde(''); setFHasta(''); setFChofer(''); setFCliente(null); setFEstado('') }}>
+                onClick={() => { setFDesde(todayISO()); setFHasta(todayISO()); setFChofer(''); setFCliente(null); setFEstado('') }}>
                 Limpiar
               </Button>
             </Grid>

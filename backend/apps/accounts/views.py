@@ -5,7 +5,14 @@ from .serializers import UserSerializer, UserCreateSerializer
 
 class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.rol == 'admin'
+        return (
+            request.user.is_authenticated
+            and (
+                request.user.rol == 'admin'
+                or request.user.is_staff
+                or request.user.is_superuser
+            )
+        )
 
 
 class MeView(generics.RetrieveUpdateAPIView):
@@ -32,7 +39,8 @@ class UserListCreateView(generics.ListCreateAPIView):
         return UserSerializer
 
     def get_queryset(self):
-        if self.request.user.rol != 'admin':
+        user = self.request.user
+        if not (user.rol == 'admin' or user.is_staff or user.is_superuser):
             return User.objects.filter(id=self.request.user.id)
         return super().get_queryset()
 
