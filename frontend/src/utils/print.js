@@ -443,12 +443,18 @@ async function uploadToDrive(html, filename, folderId) {
   }
 
   try {
-    // Crear un elemento temporal renderizable. Si queda fuera del viewport,
-    // html2canvas puede generar un PDF en blanco en algunos navegadores.
+    const parsed = new DOMParser().parseFromString(html, 'text/html')
+    const styles = Array.from(parsed.head.querySelectorAll('style'))
+      .map((style) => style.outerHTML)
+      .join('')
+
+    // Crear un elemento temporal renderizable para html2canvas.
     const container = document.createElement('div')
-    container.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#fff;z-index:-1;pointer-events:none'
-    container.innerHTML = html
+    container.style.cssText = 'position:fixed;top:0;left:0;width:794px;min-height:1123px;background:#fff;z-index:2147483647;pointer-events:none;overflow:hidden'
+    container.innerHTML = `${styles}${parsed.body.innerHTML}`
     document.body.appendChild(container)
+
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
 
     // Generar PDF como blob
     const blob = await html2pdf()
