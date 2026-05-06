@@ -5,7 +5,11 @@ from rest_framework import generics, permissions, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from weasyprint import HTML as WeasyHTML
+
+try:
+    from weasyprint import HTML as WeasyHTML
+except Exception:
+    WeasyHTML = None
 from .models import (
     Viaje, ViajeAdicional, Gasto,
     Preliquidacion, PreliquidacionDetalle,
@@ -699,6 +703,8 @@ class GenerarPDFView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        if WeasyHTML is None:
+            return Response({'detail': 'WeasyPrint no disponible en este entorno.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         html_content = request.data.get('html')
         if not html_content:
             return Response({'detail': 'Se requiere el HTML.'}, status=status.HTTP_400_BAD_REQUEST)
