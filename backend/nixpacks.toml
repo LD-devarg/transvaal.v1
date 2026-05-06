@@ -9,6 +9,7 @@ nixPkgs = [
   "gobject-introspection",
   "fontconfig",
   "freetype",
+  "libgobject-2.0",
 ]
 
 [phases.install]
