@@ -1,19 +1,19 @@
 [phases.setup]
 nixPkgs = [
-  "python312",
-  "glib",
-  "pango",
-  "harfbuzz",
-  "gdk-pixbuf",
-  "cairo",
-  "gobject-introspection",
-  "fontconfig",
-  "freetype",
-  "libgobject-2.0",
+ "python312",
+ "glib",
+ "pango",
+ "harfbuzz",
+ "gdk-pixbuf",
+ "cairo",
+ "gobject-introspection",
+ "fontconfig",
+ "freetype",
 ]
-
 [phases.install]
 cmds = [
-  "python3 -m venv --copies /opt/venv",
-  ". /opt/venv/bin/activate && pip install -r requirements.txt",
+ "python3 -m venv --copies /opt/venv",
+ ". /opt/venv/bin/activate && pip install -r requirements.txt",
 ]
+[variables]
+LD_LIBRARY_PATH = "/root/.nix-profile/lib"
