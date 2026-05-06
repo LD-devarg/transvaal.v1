@@ -12,6 +12,20 @@ const fmtPeso = (v) =>
 const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
+const isLowPowerDevice = () => {
+  const cores = navigator.hardwareConcurrency || 0
+  const memory = navigator.deviceMemory || 0
+  return (cores > 0 && cores <= 2) || (memory > 0 && memory <= 4)
+}
+
+const runWhenIdle = (callback, timeout = 2500) => {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(callback, { timeout })
+    return
+  }
+  setTimeout(callback, timeout)
+}
+
 // ─── Nombre de archivo ────────────────────────────────────────────────────────
 // Formato: MM-AA-NOMBRE-PROVEEDOR-PRIMERA/SEGUNDA-QUINCENA-PRELIQ/LIQUID.pdf
 // Quincena: día de inicio 1-15 → PRIMERA, 16+ → SEGUNDA
@@ -48,6 +62,12 @@ const CSS = `
     color: #1e293b;
     background: #fff;
     padding: 28px 36px;
+  }
+
+  .gastos-page {
+    page-break-before: always;
+    break-before: page;
+    padding-top: 28px;
   }
 
   /* ── Header ── */
@@ -247,11 +267,33 @@ const CSS = `
 
   /* ── Print ── */
   @media print {
+    html, body {
+      width: 210mm;
+      min-height: 297mm;
+      overflow: visible !important;
+    }
     body { padding: 0; }
     @page { margin: 1.4cm; size: A4; }
     thead tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .t-row.final { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    tr { page-break-inside: avoid; }
+    table { page-break-inside: auto; break-inside: auto; }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+    .gastos-page {
+      display: block !important;
+      page-break-before: always;
+      break-before: page;
+      page-break-inside: auto;
+      break-inside: auto;
+      padding-top: 0;
+    }
+  }
+
+  @media screen {
+    body {
+      min-width: 794px;
+    }
   }
 `
 
@@ -286,7 +328,7 @@ function buildGastosPage(gastos) {
   }).join('\n')
 
   return `
-  <div style="page-break-before:always; padding-top:28px;">
+  <div class="gastos-page">
     <div class="section-title"><span>Gastos del período (${gastos.length} registros)</span></div>
     <table>
       <thead>
@@ -421,7 +463,7 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
 }
 
 // ─── Abrir ventana e imprimir ─────────────────────────────────────────────────
-function openAndPrint(html, title) {
+function openAndPrint(html, title, { afterPrint } = {}) {
   const w = window.open('', '_blank', 'width=960,height=720,toolbar=0,menubar=0')
   if (!w) {
     alert('El navegador bloqueó la ventana emergente. Habilitá los pop-ups para este sitio.')
@@ -430,8 +472,33 @@ function openAndPrint(html, title) {
   w.document.write(html)
   w.document.close()
   w.focus()
-  // Pequeña espera para que los estilos se apliquen antes de imprimir
-  setTimeout(() => w.print(), 600)
+
+  let afterPrintDone = false
+  const runAfterPrint = () => {
+    if (afterPrintDone || typeof afterPrint !== 'function') return
+    afterPrintDone = true
+    runWhenIdle(afterPrint, 6000)
+  }
+
+  w.addEventListener?.('afterprint', runAfterPrint, { once: true })
+
+  const printWhenReady = async () => {
+    try {
+      if (w.document.fonts?.ready) await w.document.fonts.ready
+      await new Promise((resolve) => w.requestAnimationFrame(() => w.requestAnimationFrame(resolve)))
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      w.print()
+      setTimeout(runAfterPrint, 10000)
+    } catch {
+      setTimeout(() => {
+        w.print()
+        setTimeout(runAfterPrint, 10000)
+      }, 800)
+    }
+  }
+
+  printWhenReady()
+  return w
 }
 
 // ─── Subir PDF a Google Drive via GAS ────────────────────────────────────────
@@ -442,19 +509,38 @@ async function uploadToDrive(html, filename, folderId) {
     return
   }
 
+  let iframe = null
   try {
-    const parsed = new DOMParser().parseFromString(html, 'text/html')
-    const styles = Array.from(parsed.head.querySelectorAll('style'))
-      .map((style) => style.outerHTML)
-      .join('')
+    iframe = document.createElement('iframe')
+    iframe.setAttribute('aria-hidden', 'true')
+    iframe.style.cssText = [
+      'position:fixed',
+      'left:0',
+      'top:0',
+      'width:794px',
+      'height:1123px',
+      'border:0',
+      'opacity:0',
+      'pointer-events:none',
+      'z-index:-1',
+    ].join(';')
+    document.body.appendChild(iframe)
 
-    // Crear un elemento temporal renderizable para html2canvas.
-    const container = document.createElement('div')
-    container.style.cssText = 'position:fixed;top:0;left:0;width:794px;min-height:1123px;background:#fff;z-index:2147483647;pointer-events:none;overflow:hidden'
-    container.innerHTML = `${styles}${parsed.body.innerHTML}`
-    document.body.appendChild(container)
+    const doc = iframe.contentDocument || iframe.contentWindow.document
+    doc.open()
+    doc.write(html)
+    doc.close()
 
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await new Promise((resolve) => {
+      const finish = () => requestAnimationFrame(() => requestAnimationFrame(resolve))
+      if (iframe.contentWindow.document.readyState === 'complete') finish()
+      else iframe.onload = finish
+    })
+
+    const printBody = doc.body
+    printBody.style.width = '794px'
+    printBody.style.minHeight = '1123px'
+    printBody.style.background = '#fff'
 
     // Generar PDF como blob
     const blob = await html2pdf()
@@ -462,13 +548,15 @@ async function uploadToDrive(html, filename, folderId) {
         margin:      [10, 10, 10, 10],
         filename,
         image:       { type: 'jpeg', quality: 0.92 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 794 },
+        html2canvas: { scale: isLowPowerDevice() ? 1 : 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 794, backgroundColor: '#ffffff' },
         jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:   { mode: ['css', 'legacy'] },
       })
-      .from(container)
+      .from(printBody)
       .outputPdf('blob')
 
-    document.body.removeChild(container)
+    iframe.remove()
+    iframe = null
 
     // Convertir blob a base64
     const base64 = await new Promise((resolve, reject) => {
@@ -481,7 +569,7 @@ async function uploadToDrive(html, filename, folderId) {
     // Enviar al GAS
     const res = await fetch(GAS_URL, {
       method:  'POST',
-      body:    JSON.stringify({ pdf_b64: base64, filename, folder_id: folderId }),
+      body:    JSON.stringify({ file_b64: base64, mime_type: 'application/pdf', filename, folder_id: folderId }),
     })
     const data = await res.json()
     if (!data.ok) {
@@ -492,6 +580,8 @@ async function uploadToDrive(html, filename, folderId) {
   } catch (err) {
     console.error('Error al subir a Drive:', err)
     return { ok: false, error: err.message || 'Error al subir a Drive.' }
+  } finally {
+    if (iframe) iframe.remove()
   }
 }
 
@@ -537,10 +627,11 @@ export async function savePreliquidacionToDrive(preliq) {
 
 export function printPreliquidacion(preliq) {
   const { html, filename } = buildPreliquidacionDocument(preliq)
-  openAndPrint(html, filename)
-  if (preliq.carpeta_drive_id) {
-    uploadToDrive(html, filename, preliq.carpeta_drive_id)
-  }
+  openAndPrint(html, filename, {
+    afterPrint: () => {
+      if (preliq.carpeta_drive_id) uploadToDrive(html, filename, preliq.carpeta_drive_id)
+    },
+  })
 }
 
 // ─── Liquidación ──────────────────────────────────────────────────────────────
@@ -572,8 +663,9 @@ export function printLiquidacion(liq) {
   })
 
   const filename = buildFilename(liq.periodo_desde, liq.proveedor_nombre, 'LIQUID')
-  openAndPrint(html, filename)
-  if (liq.carpeta_drive_id) {
-    uploadToDrive(html, filename, liq.carpeta_drive_id)
-  }
+  openAndPrint(html, filename, {
+    afterPrint: () => {
+      if (liq.carpeta_drive_id) uploadToDrive(html, filename, liq.carpeta_drive_id)
+    },
+  })
 }
