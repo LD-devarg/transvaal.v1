@@ -15,8 +15,9 @@ import {
   ExpandLess as ExpandLessIcon,
   AttachMoney as MoneyIcon,
   Print as PrintIcon,
+  CloudUpload as DriveIcon,
 } from '@mui/icons-material'
-import { printLiquidacion } from '../../utils/print'
+import { printLiquidacion, saveLiquidacionToDrive } from '../../utils/print'
 
 const fmtPeso = (val) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
@@ -97,6 +98,7 @@ export default function LiquidacionesPage() {
   const [expandedLiq, setExpandedLiq]           = useState(null)
 
   const [loading, setLoading]   = useState(false)
+  const [savingDriveId, setSavingDriveId] = useState(null)
   const [success, setSuccess]   = useState('')
   const [error, setError]       = useState('')
 
@@ -173,6 +175,24 @@ export default function LiquidacionesPage() {
       cargarHistorial(proveedor?.id || null)
     } catch {
       setError('No se pudo cambiar el estado de pago.')
+    }
+  }
+
+  const handleEnviarDrive = async (liq) => {
+    setSavingDriveId(liq.id)
+    setError('')
+    setSuccess('')
+    try {
+      const driveResult = await saveLiquidacionToDrive(liq)
+      if (driveResult && !driveResult.ok) {
+        setError(`No se pudo guardar el PDF en Drive: ${driveResult.error || 'error desconocido'}`)
+        return
+      }
+      setSuccess('PDF guardado en Drive correctamente.')
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el PDF en Drive.')
+    } finally {
+      setSavingDriveId(null)
     }
   }
 
@@ -367,6 +387,12 @@ export default function LiquidacionesPage() {
                                 onClick={(e) => { e.stopPropagation(); printLiquidacion(liq) }}
                                 sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#60a5fa' } }}>
                                 <PrintIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                              <IconButton size="small" title="Enviar PDF a Drive"
+                                disabled={savingDriveId === liq.id || !liq.carpeta_drive_id}
+                                onClick={(e) => { e.stopPropagation(); handleEnviarDrive(liq) }}
+                                sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#22c55e' }, '&.Mui-disabled': { color: 'rgba(255,255,255,0.12)' } }}>
+                                {savingDriveId === liq.id ? <CircularProgress size={14} /> : <DriveIcon sx={{ fontSize: 15 }} />}
                               </IconButton>
                               <Box sx={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 14 }}>
                                 {expandedLiq === liq.id ? <ExpandLessIcon fontSize="inherit" /> : <ExpandMoreIcon fontSize="inherit" />}

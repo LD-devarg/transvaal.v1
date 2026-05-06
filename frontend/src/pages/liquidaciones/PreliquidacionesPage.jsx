@@ -15,6 +15,7 @@ import {
   ExpandLess as ExpandLessIcon,
   Receipt as ReceiptIcon,
   Print as PrintIcon,
+  CloudUpload as DriveIcon,
 } from '@mui/icons-material'
 import { printPreliquidacion, savePreliquidacionToDrive } from '../../utils/print'
 
@@ -111,6 +112,7 @@ export default function PreliquidacionesPage() {
   const [expandedPreliq, setExpandedPreliq] = useState(null)
 
   const [loading, setLoading]   = useState(false)
+  const [savingDriveId, setSavingDriveId] = useState(null)
   const [success, setSuccess]   = useState('')
   const [error, setError]       = useState('')
 
@@ -200,16 +202,28 @@ export default function PreliquidacionesPage() {
 
   const handleCambiarEstado = async (preliqId, nuevoEstado) => {
     try {
-      const { data } = await client.patch(`/operaciones/preliquidaciones/${preliqId}/`, { estado: nuevoEstado })
-      if (nuevoEstado === 'enviada') {
-        const driveResult = await savePreliquidacionToDrive(data)
-        if (driveResult && !driveResult.ok) {
-          setError(`La preliquidacion se envio, pero no se pudo guardar el PDF en Drive: ${driveResult.error || 'error desconocido'}`)
-        }
-      }
+      await client.patch(`/operaciones/preliquidaciones/${preliqId}/`, { estado: nuevoEstado })
       cargarHistorial(proveedor?.id || null)
     } catch {
       setError('No se pudo cambiar el estado.')
+    }
+  }
+
+  const handleEnviarDrive = async (preliq) => {
+    setSavingDriveId(preliq.id)
+    setError('')
+    setSuccess('')
+    try {
+      const driveResult = await savePreliquidacionToDrive(preliq)
+      if (driveResult && !driveResult.ok) {
+        setError(`No se pudo guardar el PDF en Drive: ${driveResult.error || 'error desconocido'}`)
+        return
+      }
+      setSuccess('PDF guardado en Drive correctamente.')
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el PDF en Drive.')
+    } finally {
+      setSavingDriveId(null)
     }
   }
 
@@ -471,6 +485,12 @@ export default function PreliquidacionesPage() {
                                   onClick={(e) => { e.stopPropagation(); printPreliquidacion(p) }}
                                   sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#60a5fa' } }}>
                                   <PrintIcon sx={{ fontSize: 15 }} />
+                                </IconButton>
+                                <IconButton size="small" title="Enviar PDF a Drive"
+                                  disabled={savingDriveId === p.id || !p.carpeta_drive_id}
+                                  onClick={(e) => { e.stopPropagation(); handleEnviarDrive(p) }}
+                                  sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#22c55e' }, '&.Mui-disabled': { color: 'rgba(255,255,255,0.12)' } }}>
+                                  {savingDriveId === p.id ? <CircularProgress size={14} /> : <DriveIcon sx={{ fontSize: 15 }} />}
                                 </IconButton>
                               </Box>
                             </TableCell>

@@ -2,8 +2,6 @@
 // printPreliquidacion(preliq) y printLiquidacion(liq):
 //   1. Abre ventana de impresión (window.print)
 //   2. Si el objeto tiene carpeta_drive_id, sube el PDF a Drive via GAS
-import html2pdf from 'html2pdf.js'
-
 const EMPRESA = 'TRANSVAAL'
 
 const fmtPeso = (v) =>
@@ -501,7 +499,7 @@ function openAndPrint(html, title, { afterPrint } = {}) {
   return w
 }
 
-// ─── Subir PDF a Google Drive via GAS ────────────────────────────────────────
+// ─── Subir PDF a Google Drive via backend + GAS ───────────────────────────────
 async function uploadToDrive(html, filename, folderId) {
   const GAS_URL = import.meta.env.VITE_GAS_URL
   if (!GAS_URL) {
@@ -509,69 +507,38 @@ async function uploadToDrive(html, filename, folderId) {
     return
   }
 
-  let iframe = null
   try {
-    iframe = document.createElement('iframe')
-    iframe.setAttribute('aria-hidden', 'true')
-    iframe.style.cssText = [
-      'position:fixed',
-      'left:0',
-      'top:0',
-      'width:794px',
-      'height:1123px',
-      'border:0',
-      'opacity:0',
-      'pointer-events:none',
-      'z-index:-1',
-    ].join(';')
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentDocument || iframe.contentWindow.document
-    doc.open()
-    doc.write(html)
-    doc.close()
-
-    await new Promise((resolve) => {
-      const finish = () => requestAnimationFrame(() => requestAnimationFrame(resolve))
-      if (iframe.contentWindow.document.readyState === 'complete') finish()
-      else iframe.onload = finish
+    // 1. Backend genera el PDF con WeasyPrint
+    const token = localStorage.getItem('access')
+    const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
+    const pdfRes = await fetch(`${API_URL}/operaciones/generar-pdf/`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ html }),
     })
+    if (!pdfRes.ok) {
+      const detail = await pdfRes.text()
+      return { ok: false, error: `Error al generar el PDF: ${detail}` }
+    }
 
-    const printBody = doc.body
-    printBody.style.width = '794px'
-    printBody.style.minHeight = '1123px'
-    printBody.style.background = '#fff'
-
-    // Generar PDF como blob
-    const blob = await html2pdf()
-      .set({
-        margin:      [10, 10, 10, 10],
-        filename,
-        image:       { type: 'jpeg', quality: 0.92 },
-        html2canvas: { scale: isLowPowerDevice() ? 1 : 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 794, backgroundColor: '#ffffff' },
-        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak:   { mode: ['css', 'legacy'] },
-      })
-      .from(printBody)
-      .outputPdf('blob')
-
-    iframe.remove()
-    iframe = null
-
-    // Convertir blob a base64
+    // 2. Convertir respuesta a base64
+    const pdfBlob = await pdfRes.blob()
     const base64 = await new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload  = () => resolve(reader.result.split(',')[1])
       reader.onerror = reject
-      reader.readAsDataURL(blob)
+      reader.readAsDataURL(pdfBlob)
     })
 
-    // Enviar al GAS
-    const res = await fetch(GAS_URL, {
-      method:  'POST',
-      body:    JSON.stringify({ file_b64: base64, mime_type: 'application/pdf', filename, folder_id: folderId }),
+    // 3. Enviar al GAS para guardar en Drive
+    const gasRes = await fetch(GAS_URL, {
+      method: 'POST',
+      body:   JSON.stringify({ file_b64: base64, mime_type: 'application/pdf', filename, folder_id: folderId }),
     })
-    const data = await res.json()
+    const data = await gasRes.json()
     if (!data.ok) {
       console.error('GAS error:', data.error)
       return data
@@ -580,8 +547,6 @@ async function uploadToDrive(html, filename, folderId) {
   } catch (err) {
     console.error('Error al subir a Drive:', err)
     return { ok: false, error: err.message || 'Error al subir a Drive.' }
-  } finally {
-    if (iframe) iframe.remove()
   }
 }
 
@@ -627,15 +592,11 @@ export async function savePreliquidacionToDrive(preliq) {
 
 export function printPreliquidacion(preliq) {
   const { html, filename } = buildPreliquidacionDocument(preliq)
-  openAndPrint(html, filename, {
-    afterPrint: () => {
-      if (preliq.carpeta_drive_id) uploadToDrive(html, filename, preliq.carpeta_drive_id)
-    },
-  })
+  openAndPrint(html, filename)
 }
 
 // ─── Liquidación ──────────────────────────────────────────────────────────────
-export function printLiquidacion(liq) {
+function buildLiquidacionDocument(liq) {
   const extraMeta = liq.factura ? `
     <div class="meta-box">
       <div class="meta-lbl">N° Factura</div>
@@ -663,9 +624,18 @@ export function printLiquidacion(liq) {
   })
 
   const filename = buildFilename(liq.periodo_desde, liq.proveedor_nombre, 'LIQUID')
-  openAndPrint(html, filename, {
-    afterPrint: () => {
-      if (liq.carpeta_drive_id) uploadToDrive(html, filename, liq.carpeta_drive_id)
-    },
-  })
+  return { html, filename }
+}
+
+export async function saveLiquidacionToDrive(liq) {
+  if (!liq.carpeta_drive_id) {
+    return { ok: false, error: 'La liquidacion no tiene carpeta de Drive configurada.' }
+  }
+  const { html, filename } = buildLiquidacionDocument(liq)
+  return uploadToDrive(html, filename, liq.carpeta_drive_id)
+}
+
+export function printLiquidacion(liq) {
+  const { html, filename } = buildLiquidacionDocument(liq)
+  openAndPrint(html, filename)
 }

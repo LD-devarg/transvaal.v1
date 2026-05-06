@@ -1,9 +1,11 @@
 from decimal import Decimal
 from django.db import transaction
+from django.http import HttpResponse
 from rest_framework import generics, permissions, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from weasyprint import HTML as WeasyHTML
 from .models import (
     Viaje, ViajeAdicional, Gasto,
     Preliquidacion, PreliquidacionDetalle,
@@ -689,4 +691,21 @@ class ResponderPreliquidacionView(APIView):
 
         preliq.save(update_fields=['estado'])
         return Response(PreliquidacionSerializer(preliq).data)
+
+
+# ── Generación de PDF ──────────────────────────────────────────────────────────
+
+class GenerarPDFView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        html_content = request.data.get('html')
+        if not html_content:
+            return Response({'detail': 'Se requiere el HTML.'}, status=status.HTTP_400_BAD_REQUEST)
+        # WeasyPrint no procesa @page dentro de @media print — se inyecta explícitamente
+        weasy_css = '<style>@page { size: A4; margin: 1.4cm; } html, body { width: auto !important; padding: 0 !important; }</style>'
+        html_content = html_content.replace('</head>', weasy_css + '</head>', 1)
+        pdf_bytes = WeasyHTML(string=html_content).write_pdf()
+        return HttpResponse(pdf_bytes, content_type='application/pdf')
+
 

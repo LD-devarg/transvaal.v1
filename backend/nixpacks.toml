@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = [
+  "pango",
+  "harfbuzz",
+  "gdk-pixbuf",
+  "cairo",
+  "gobject-introspection",
+  "glib",
+  "fontconfig",
+  "freetype",
+]

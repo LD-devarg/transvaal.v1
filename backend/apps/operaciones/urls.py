@@ -8,6 +8,7 @@ from .views import (
     LiquidacionListCreateView, LiquidacionDetailView, GenerarLiquidacionView,
     MisViajesView, MisLiquidacionesView, MisPreliquidacionesView,
     ResponderPreliquidacionView,
+    GenerarPDFView,
 )
 
 urlpatterns = [
@@ -38,5 +39,8 @@ urlpatterns = [
     path('mis-liquidaciones/',     MisLiquidacionesView.as_view(),     name='mis_liquidaciones'),
     path('mis-preliquidaciones/',          MisPreliquidacionesView.as_view(),       name='mis_preliquidaciones'),
     path('mis-preliquidaciones/<int:pk>/responder/', ResponderPreliquidacionView.as_view(), name='mis_preliquidaciones_responder'),
+
+    # PDF
+    path('generar-pdf/', GenerarPDFView.as_view(), name='generar_pdf'),
 ]
 
