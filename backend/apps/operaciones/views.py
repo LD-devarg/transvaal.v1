@@ -53,6 +53,13 @@ class GastoListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(fecha_gasto__lte=hasta)
         return qs.order_by('-fecha_gasto')
 
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        if request.query_params.get('sin_paginar') == 'true':
+            serializer = self.get_serializer(qs, many=True)
+            return Response(serializer.data)
+        return super().list(request, *args, **kwargs)
+
 
 class GastoDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = GastoSerializer
@@ -115,7 +122,7 @@ class ViajeListCreateView(generics.ListCreateAPIView):
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
         # Paginación solo cuando no se usan filtros de selección masiva
-        if request.query_params.get('sin_preliquidar') == 'true':
+        if request.query_params.get('sin_preliquidar') == 'true' or request.query_params.get('sin_paginar') == 'true':
             serializer = self.get_serializer(qs, many=True)
             return Response(serializer.data)
         paginator = ViajePagination()
@@ -237,10 +244,15 @@ class PreliquidacionListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         qs = Preliquidacion.objects.select_related('proveedor').prefetch_related('detalles')
-        if self.request.query_params.get('proveedor'):
-            qs = qs.filter(proveedor_id=self.request.query_params['proveedor'])
-        if self.request.query_params.get('estado'):
-            qs = qs.filter(estado=self.request.query_params['estado'])
+        params = self.request.query_params
+        if params.get('proveedor'):
+            qs = qs.filter(proveedor_id=params['proveedor'])
+        if params.get('estado'):
+            qs = qs.filter(estado=params['estado'])
+        if params.get('desde'):
+            qs = qs.filter(periodo_desde__gte=params['desde'])
+        if params.get('hasta'):
+            qs = qs.filter(periodo_hasta__lte=params['hasta'])
         return qs
 
 

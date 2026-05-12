@@ -153,7 +153,7 @@ class PreliquidacionSerializer(serializers.ModelSerializer):
             'id', 'fecha', 'proveedor', 'proveedor_nombre', 'carpeta_drive_id',
             'periodo_desde', 'periodo_hasta',
             'gastos_periodo', 'total_sin_iva', 'total_con_iva', 'adeudado_final',
-            'estado', 'estado_display', 'liquidacion', 'detalles', 'gastos',
+            'estado', 'estado_display', 'enviado_a_drive', 'liquidacion', 'detalles', 'gastos',
         )
         read_only_fields = ('total_sin_iva', 'total_con_iva', 'adeudado_final', 'liquidacion')
 

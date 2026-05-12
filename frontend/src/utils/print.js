@@ -1,3 +1,5 @@
+import client from '../api/client'
+
 // ─── Utilidades de impresión y guardado en Drive ──────────────────────────────
 // printPreliquidacion(preliq) y printLiquidacion(liq):
 //   1. Abre ventana de impresión (window.print)
@@ -29,9 +31,9 @@ const runWhenIdle = (callback, timeout = 2500) => {
 // Quincena: día de inicio 1-15 → PRIMERA, 16+ → SEGUNDA
 function buildFilename(periodoDesde, proveedorNombre, tipo) {
   const fecha = new Date(periodoDesde + 'T00:00:00')
-  const mes   = String(fecha.getMonth() + 1).padStart(2, '0')
-  const anio  = String(fecha.getFullYear()).slice(-2)
-  const dia   = fecha.getDate()
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
+  const anio = String(fecha.getFullYear()).slice(-2)
+  const dia = fecha.getDate()
   const quincena = dia <= 15 ? 'PRIMERA' : 'SEGUNDA'
   const nombre = proveedorNombre
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quitar tildes
@@ -56,7 +58,8 @@ const CSS = `
 
   body {
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 12px;
+    font-size: 15px;
+    font-weight: bold;
     color: #1e293b;
     background: #fff;
     padding: 28px 36px;
@@ -178,8 +181,8 @@ const CSS = `
   }
   thead th {
     color: #fff;
-    font-size: 9.5px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.7px;
     padding: 9px 10px;
@@ -191,7 +194,7 @@ const CSS = `
   tbody td {
     padding: 7px 10px;
     border-bottom: 1px solid #e2e8f0;
-    font-size: 11.5px;
+    font-size: 15px;
     color: #334155;
     vertical-align: top;
   }
@@ -215,7 +218,7 @@ const CSS = `
     margin-bottom: 32px;
   }
   .totals {
-    width: 300px;
+    width: 400px;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     overflow: hidden;
@@ -256,7 +259,7 @@ const CSS = `
   .adic-item {
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
+    font-size: 13px;
     color: #475569;
     padding: 1px 0;
   }
@@ -299,10 +302,10 @@ const CSS = `
 function buildGastosPage(gastos) {
   if (!gastos || gastos.length === 0) return ''
   const rows = gastos.map((g, i) => {
-    const comb     = g.combustible || {}
-    const bruto    = parseFloat(comb.precio_total_comb || 0)
-    const neto     = parseFloat(g.total_combustible || 0)
-    const varios   = g.varios || []
+    const comb = g.combustible || {}
+    const bruto = parseFloat(comb.precio_total_comb || 0)
+    const neto = parseFloat(g.total_combustible || 0)
+    const varios = g.varios || []
     const adelanto = parseFloat(g.adelanto_otros || 0)
 
     const combustCell = bruto > 0
@@ -404,8 +407,8 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
     </thead>
     <tbody>
       ${rows.map((d, i) => {
-        const adicsHTML = fmtAdicsHTML(d.adicionales_snapshot)
-        return `<tr>
+    const adicsHTML = fmtAdicsHTML(d.adicionales_snapshot)
+    return `<tr>
         <td style="color:#94a3b8">${i + 1}</td>
         <td>${fmtFecha(d.fecha_viaje)}</td>
         <td>${d.cliente_snapshot || '-'}</td>
@@ -414,12 +417,12 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
         <td>${adicsHTML || '<span class="muted">—</span>'}</td>
         <td class="amount">${fmtPeso(d.tarifa_sin_iva)}</td>
       </tr>`
-      }).join('\n      ')}
+  }).join('\n      ')}
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="6" style="text-align:right; color:#475569; font-weight:600;">Subtotal sin IVA</td>
-        <td class="amount">${fmtPeso(totalSinIva)}</td>
+        <td colspan="6" style="text-align:right; color:#475569;font-size:16px; font-weight:600;">Subtotal sin IVA</td>
+        <td class="amount" style="font-size:16px; font-weight:600;">${fmtPeso(totalSinIva)}</td>
       </tr>
     </tfoot>
   </table>
@@ -427,24 +430,24 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
   <div class="totals-wrap">
     <div class="totals">
       <div class="t-row">
-        <span class="t-lbl">Total sin IVA</span>
-        <span class="t-val">${fmtPeso(totalSinIva)}</span>
+        <span class="t-lbl" style="font-size:16px; font-weight:600;">Total sin IVA</span>
+        <span class="t-val" style="font-size:16px; font-weight:600;">${fmtPeso(totalSinIva)}</span>
       </div>
       <div class="t-row">
-        <span class="t-lbl">IVA (21%)</span>
-        <span class="t-val">${fmtPeso(iva)}</span>
+        <span class="t-lbl" style="font-size:16px; font-weight:600;">IVA (21%)</span>
+        <span class="t-val" style="font-size:16px; font-weight:600;">${fmtPeso(iva)}</span>
       </div>
       <div class="t-row sep">
-        <span class="t-lbl" style="font-weight:600; color:#1e293b">Total con IVA</span>
-        <span class="t-val" style="color:#1e293b">${fmtPeso(totalConIva)}</span>
+        <span class="t-lbl" style="font-size:16px; font-weight:600;">Total con IVA</span>
+        <span class="t-val" style="font-size:16px; font-weight:600;">${fmtPeso(totalConIva)}</span>
       </div>
       <div class="t-row gastos">
-        <span class="t-lbl">(-) Gastos del período</span>
-        <span class="t-val">${fmtPeso(gastosPeriodo)}</span>
+        <span class="t-lbl" style="font-size:16px; font-weight:600;">(-) Gastos del período</span>
+        <span class="t-val" style="font-size:16px; font-weight:600;">${fmtPeso(gastosPeriodo)}</span>
       </div>
       <div class="t-row final">
-        <span class="t-lbl">ADEUDADO</span>
-        <span class="t-val">${fmtPeso(adeudadoFinal)}</span>
+        <span class="t-lbl" style="font-size:16px; font-weight:600;">ADEUDADO</span>
+        <span class="t-val" style="font-size:16px; font-weight:600;">${fmtPeso(adeudadoFinal)}</span>
       </div>
     </div>
   </div>
@@ -509,26 +512,11 @@ async function uploadToDrive(html, filename, folderId) {
 
   try {
     // 1. Backend genera el PDF con WeasyPrint
-    const token = localStorage.getItem('access')
-    const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
-    const pdfRes = await fetch(`${API_URL}/operaciones/generar-pdf/`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ html }),
-    })
-    if (!pdfRes.ok) {
-      const detail = await pdfRes.text()
-      return { ok: false, error: `Error al generar el PDF: ${detail}` }
-    }
-
-    // 2. Convertir respuesta a base64
-    const pdfBlob = await pdfRes.blob()
+    const pdfRes = await client.post('/operaciones/generar-pdf/', { html }, { responseType: 'blob' })
+    const pdfBlob = pdfRes.data
     const base64 = await new Promise((resolve, reject) => {
       const reader = new FileReader()
-      reader.onload  = () => resolve(reader.result.split(',')[1])
+      reader.onload = () => resolve(reader.result.split(',')[1])
       reader.onerror = reject
       reader.readAsDataURL(pdfBlob)
     })
@@ -536,7 +524,7 @@ async function uploadToDrive(html, filename, folderId) {
     // 3. Enviar al GAS para guardar en Drive
     const gasRes = await fetch(GAS_URL, {
       method: 'POST',
-      body:   JSON.stringify({ file_b64: base64, mime_type: 'application/pdf', filename, folder_id: folderId }),
+      body: JSON.stringify({ file_b64: base64, mime_type: 'application/pdf', filename, folder_id: folderId }),
     })
     const data = await gasRes.json()
     if (!data.ok) {
@@ -546,7 +534,13 @@ async function uploadToDrive(html, filename, folderId) {
     return data
   } catch (err) {
     console.error('Error al subir a Drive:', err)
-    return { ok: false, error: err.message || 'Error al subir a Drive.' }
+    let errorDetail = err.message
+    if (err.response && err.response.data instanceof Blob) {
+      errorDetail = await err.response.data.text()
+    } else if (err.response && err.response.data) {
+      errorDetail = JSON.stringify(err.response.data)
+    }
+    return { ok: false, error: errorDetail || 'Error al subir a Drive.' }
   }
 }
 
@@ -563,19 +557,19 @@ function buildPreliquidacionDocument(preliq) {
     </div>`
 
   const html = buildHTML({
-    tipo:           'Preliquidación',
-    id:             preliq.id,
+    tipo: 'Preliquidación',
+    id: preliq.id,
     proveedorNombre: preliq.proveedor_nombre,
-    periodoDesde:   preliq.periodo_desde,
-    periodoHasta:   preliq.periodo_hasta,
-    fechaEmision:   preliq.fecha,
+    periodoDesde: preliq.periodo_desde,
+    periodoHasta: preliq.periodo_hasta,
+    fechaEmision: preliq.fecha,
     extraMeta,
-    rows:           preliq.detalles || [],
-    totalSinIva:    preliq.total_sin_iva,
-    totalConIva:    preliq.total_con_iva,
-    gastosPeriodo:  preliq.gastos_periodo,
-    adeudadoFinal:  preliq.adeudado_final,
-    gastos:         preliq.gastos || [],
+    rows: preliq.detalles || [],
+    totalSinIva: preliq.total_sin_iva,
+    totalConIva: preliq.total_con_iva,
+    gastosPeriodo: preliq.gastos_periodo,
+    adeudadoFinal: preliq.adeudado_final,
+    gastos: preliq.gastos || [],
   })
 
   const filename = buildFilename(preliq.periodo_desde, preliq.proveedor_nombre, 'PRELIQ')
@@ -608,19 +602,19 @@ function buildLiquidacionDocument(liq) {
     </div>`
 
   const html = buildHTML({
-    tipo:           'Liquidación',
-    id:             liq.id,
+    tipo: 'Liquidación',
+    id: liq.id,
     proveedorNombre: liq.proveedor_nombre,
-    periodoDesde:   liq.periodo_desde,
-    periodoHasta:   liq.periodo_hasta,
-    fechaEmision:   liq.fecha,
+    periodoDesde: liq.periodo_desde,
+    periodoHasta: liq.periodo_hasta,
+    fechaEmision: liq.fecha,
     extraMeta,
-    rows:           liq.detalles || [],
-    totalSinIva:    liq.total_sin_iva,
-    totalConIva:    liq.total_con_iva,
-    gastosPeriodo:  liq.gastos_periodo,
-    adeudadoFinal:  liq.adeudado_final,
-    gastos:         liq.gastos || [],
+    rows: liq.detalles || [],
+    totalSinIva: liq.total_sin_iva,
+    totalConIva: liq.total_con_iva,
+    gastosPeriodo: liq.gastos_periodo,
+    adeudadoFinal: liq.adeudado_final,
+    gastos: liq.gastos || [],
   })
 
   const filename = buildFilename(liq.periodo_desde, liq.proveedor_nombre, 'LIQUID')

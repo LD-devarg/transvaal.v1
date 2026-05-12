@@ -97,6 +97,7 @@ class Preliquidacion(models.Model):
     total_con_iva  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     adeudado_final = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     estado         = models.CharField(max_length=15, choices=Estado.choices, default=Estado.PENDIENTE)
+    enviado_a_drive = models.BooleanField(default=False)
     liquidacion    = models.ForeignKey(
         'Liquidacion', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='preliquidaciones'

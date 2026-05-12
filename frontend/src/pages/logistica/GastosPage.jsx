@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import client from '../../api/client'
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button,
@@ -15,7 +15,10 @@ import {
   Close as CloseIcon,
   KeyboardArrowDown as ExpandMoreIcon,
   KeyboardArrowUp as ExpandLessIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material'
+
+import { exportToExcel } from '../../utils/export'
 
 const fmtPeso = (val) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
@@ -24,6 +27,11 @@ const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
+const lastWeekISO = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 7)
+  return d.toISOString().slice(0, 10)
+}
 
 const ESTADOS_EDITABLES = ['pendiente', 'para_revisar']
 const canEdit = (g) =>
@@ -290,7 +298,7 @@ export default function GastosPage() {
   const [gastos, setGastos]           = useState([])
   const [loadingList, setLoadingList] = useState(false)
 
-  const [fDesde, setFDesde]         = useState(todayISO)
+  const [fDesde, setFDesde]         = useState(lastWeekISO)
   const [fHasta, setFHasta]         = useState(todayISO)
   const [fProveedor, setFProveedor] = useState(null)
 
@@ -327,6 +335,37 @@ export default function GastosPage() {
     cargarGastos()
   }
 
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (fDesde)     params.append('desde', fDesde)
+      if (fHasta)     params.append('hasta', fHasta)
+      if (fProveedor) params.append('proveedor', fProveedor.id)
+      params.append('sin_paginar', 'true')
+
+      const r = await client.get('/operaciones/gastos/?' + params.toString())
+      const todosLosGastos = r.data.results ?? r.data
+
+      const data = todosLosGastos.map(g => ({
+        'ID': g.id,
+        'Fecha': g.fecha_gasto,
+        'Proveedor': g.proveedor_nombre,
+        'Lts Combustible': g.combustible?.lts_comb || 0,
+        'Precio Lts Combustible': g.combustible?.precio_lts_comb || 0,
+        'Remito Combustible': g.remito_combustible || '',
+        'Total Combustible Bruto': g.combustible?.precio_total_comb || 0,
+        'Total Comb. Neto (-20%)': parseFloat(g.total_combustible) || 0,
+        'Total Varios': parseFloat(g.total_varios) || 0,
+        'Adelanto/Otros': parseFloat(g.adelanto_otros) || 0,
+        'Total Gasto': parseFloat(g.total_gasto) || 0,
+        'Estado Preliq': g.preliquidacion_estado || 'Sin preliquidar'
+      }))
+      exportToExcel(data, `Gastos_${todayISO()}`)
+    } catch (error) {
+      console.error('Error al exportar:', error)
+    }
+  }
+
   return (
     <Box>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -336,15 +375,26 @@ export default function GastosPage() {
           </Typography>
           <Typography variant="h5" sx={{ fontWeight: 700, color: '#fff', mt: 0.5 }}>Gastos</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevo}
-          sx={{
-            fontWeight: 700, fontSize: 13, borderRadius: 2, px: 2.5,
-            background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
-            boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-            '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' },
-          }}>
-          Nuevo gasto
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport} disabled={gastos.length === 0}
+            sx={{
+              fontWeight: 600, fontSize: 13, borderRadius: 2, px: 2,
+              color: '#38bdf8', borderColor: 'rgba(56,189,248,0.4)',
+              '&:hover': { borderColor: '#38bdf8', bgcolor: 'rgba(56,189,248,0.1)' },
+            }}
+          >
+            Exportar
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevo}
+            sx={{
+              fontWeight: 700, fontSize: 13, borderRadius: 2, px: 2.5,
+              background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+              boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+              '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' },
+            }}>
+            Nuevo gasto
+          </Button>
+        </Box>
       </Box>
 
       {success && (
@@ -385,7 +435,7 @@ export default function GastosPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 'auto' }}>
               <Button size="small" sx={{ color: '#60a5fa', fontSize: 12, textTransform: 'none', height: 40 }}
-                onClick={() => { setFDesde(todayISO()); setFHasta(todayISO()); setFProveedor(null) }}>
+                onClick={() => { setFDesde(lastWeekISO()); setFHasta(todayISO()); setFProveedor(null) }}>
                 Limpiar
               </Button>
             </Grid>

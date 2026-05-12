@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import client from '../../api/client'
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button,
@@ -22,7 +22,10 @@ import {
   CheckCircleOutlined as CheckIcon,
   FilterList as FilterIcon,
   Close as CloseIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material'
+
+import { exportToExcel } from '../../utils/export'
 
 const CAT_MAP = {
   '3ero_sin_semi': 'precio_cat_3ero_sin_semi',
@@ -53,6 +56,11 @@ const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
+const lastWeekISO = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 7)
+  return d.toISOString().slice(0, 10)
+}
 
 const darkField = {
   '& .MuiOutlinedInput-root': {
@@ -421,7 +429,7 @@ export default function ViajesPage() {
   const [page, setPage]           = useState(1)
   const [loadingList, setLoadingList] = useState(false)
 
-  const [fDesde, setFDesde]     = useState(todayISO)
+  const [fDesde, setFDesde]     = useState(lastWeekISO)
   const [fHasta, setFHasta]     = useState(todayISO)
   const [fChofer, setFChofer]   = useState('')
   const [fCliente, setFCliente] = useState(null)
@@ -499,6 +507,41 @@ export default function ViajesPage() {
     cargarViajes(page)
   }
 
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (fDesde)         params.append('desde', fDesde)
+      if (fHasta)         params.append('hasta', fHasta)
+      if (fChofer.trim()) params.append('chofer', fChofer.trim())
+      if (fCliente)       params.append('cliente', fCliente.id)
+      if (fEstado)        params.append('estado', fEstado)
+      params.append('sin_paginar', 'true')
+
+      const r = await client.get('/operaciones/viajes/?' + params.toString())
+      const todosLosViajes = r.data.results ?? r.data
+
+      const data = todosLosViajes.map(v => {
+        const adics = (v.adicionales || []).reduce((s, a) => s + parseFloat(a.precio_snapshot || 0), 0)
+        const precio = (parseFloat(v.precio_tarifa) || 0) + adics
+        return {
+          'ID': v.id,
+          'Fecha': v.fecha,
+          'Proveedor': v.proveedor_nombre,
+          'Cliente': v.cliente_nombre,
+          'Destino': v.salida_descripcion,
+          'Remito': v.remito || '',
+          'Precio Base': parseFloat(v.precio_tarifa) || 0,
+          'Adicionales': adics,
+          'Precio Total': precio,
+          'Estado': v.estado,
+        }
+      })
+      exportToExcel(data, `Viajes_${todayISO()}`)
+    } catch (error) {
+      console.error('Error al exportar:', error)
+    }
+  }
+
   const totalPages = Math.ceil(count / 20)
 
   return (
@@ -512,16 +555,27 @@ export default function ViajesPage() {
             Viajes
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevo}
-          sx={{
-            fontWeight: 700, fontSize: 13, borderRadius: 2, px: 2.5,
-            background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
-            boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-            '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' },
-          }}
-        >
-          Nuevo viaje
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport} disabled={viajes.length === 0}
+            sx={{
+              fontWeight: 600, fontSize: 13, borderRadius: 2, px: 2,
+              color: '#38bdf8', borderColor: 'rgba(56,189,248,0.4)',
+              '&:hover': { borderColor: '#38bdf8', bgcolor: 'rgba(56,189,248,0.1)' },
+            }}
+          >
+            Exportar
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevo}
+            sx={{
+              fontWeight: 700, fontSize: 13, borderRadius: 2, px: 2.5,
+              background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+              boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+              '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' },
+            }}
+          >
+            Nuevo viaje
+          </Button>
+        </Box>
       </Box>
 
       {success && (
@@ -585,7 +639,7 @@ export default function ViajesPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 'auto' }}>
               <Button size="small" sx={{ color: '#60a5fa', fontSize: 12, textTransform: 'none', height: 40 }}
-                onClick={() => { setFDesde(todayISO()); setFHasta(todayISO()); setFChofer(''); setFCliente(null); setFEstado('') }}>
+                onClick={() => { setFDesde(lastWeekISO()); setFHasta(todayISO()); setFChofer(''); setFCliente(null); setFEstado('') }}>
                 Limpiar
               </Button>
             </Grid>
