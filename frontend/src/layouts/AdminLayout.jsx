@@ -20,8 +20,8 @@ import {
 } from '@mui/material'
 import {
   Dashboard as DashboardIcon,
-  LocalShipping as LogisticaIcon,
   Receipt as LiquidacionesIcon,
+  LocalShipping as LogisticaIcon,
   Settings as AdminIcon,
   ExpandLess,
   ExpandMore,
@@ -39,6 +39,8 @@ import {
   Logout as LogoutIcon,
   Menu as MenuIcon,
 } from '@mui/icons-material'
+import LogoTransvaal from '../../public/logo_transvaal.jpeg'
+
 
 const SIDEBAR_WIDTH = 220
 
@@ -214,7 +216,7 @@ export default function AdminLayout() {
             flexShrink: 0,
           }}
         >
-          <LogisticaIcon sx={{ color: '#fff', fontSize: 17 }} />
+          <img src={LogoTransvaal} alt="Logo institucional Transvaal" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </Box>
         {!collapsed && (
           <Typography variant="h6" sx={{ color: '#fff', fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px' }}>

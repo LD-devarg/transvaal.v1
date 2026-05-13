@@ -184,6 +184,6 @@ class LiquidacionSerializer(serializers.ModelSerializer):
             'id', 'fecha', 'proveedor', 'proveedor_nombre', 'carpeta_drive_id',
             'periodo_desde', 'periodo_hasta',
             'gastos_periodo', 'total_sin_iva', 'total_con_iva', 'adeudado_final',
-            'estado_pago', 'estado_display', 'factura', 'detalles', 'gastos',
+            'estado_pago', 'estado_display', 'factura', 'fecha_pago', 'detalles', 'gastos',
         )
         read_only_fields = ('total_sin_iva', 'total_con_iva', 'adeudado_final')

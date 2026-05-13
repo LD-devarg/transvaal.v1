@@ -48,7 +48,7 @@ class LiquidacionDetalleInline(admin.TabularInline):
 
 @admin.register(Liquidacion)
 class LiquidacionAdmin(admin.ModelAdmin):
-    list_display  = ('proveedor', 'fecha', 'periodo_desde', 'periodo_hasta', 'estado_pago', 'adeudado_final', 'factura')
+    list_display  = ('proveedor', 'fecha', 'periodo_desde', 'periodo_hasta', 'estado_pago', 'fecha_pago', 'adeudado_final', 'factura')
     list_filter   = ('estado_pago', 'proveedor')
     search_fields = ('proveedor__nombre', 'factura')
     inlines       = [LiquidacionDetalleInline]

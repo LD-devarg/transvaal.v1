@@ -25,6 +25,8 @@ const fmtPeso = (val) =>
 const fmtFecha = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '-'
 
+const todayISO = () => new Date().toISOString().slice(0, 10)
+
 const ESTADO_PAGO_CHIP = {
   pendiente:      { label: 'Pendiente',           color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
   pagada_parcial: { label: 'Pago parcial',        color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
@@ -93,6 +95,7 @@ export default function LiquidacionesPage() {
 
   const [selected, setSelected]                 = useState([])
   const [factura, setFactura]                   = useState('')
+  const [fechaPago, setFechaPago]               = useState(todayISO)
 
   const [historial, setHistorial]               = useState([])
   const [expandedLiq, setExpandedLiq]           = useState(null)
@@ -130,6 +133,7 @@ export default function LiquidacionesPage() {
     cargarHistorial(proveedor?.id || null)
     cargarPreliqsConfirmadas(proveedor?.id || null)
     setFactura('')
+    setFechaPago(todayISO())
     setSelected([])
   }, [proveedor, cargarHistorial, cargarPreliqsConfirmadas])
 
@@ -146,6 +150,10 @@ export default function LiquidacionesPage() {
       setError('Seleccioná al menos una preliquidación confirmada.')
       return
     }
+    if (!factura.trim() || !fechaPago) {
+      setError('Completá número de factura y fecha de pago.')
+      return
+    }
     setLoading(true)
     setError('')
     setSuccess('')
@@ -154,10 +162,12 @@ export default function LiquidacionesPage() {
         preliquidacion_ids: selected.map((p) => p.id),
         gastos_periodo:     totalGastos.toFixed(2),
         factura:            factura.trim(),
+        fecha_pago:          fechaPago,
       }
       await client.post('/operaciones/liquidaciones/generar/', payload)
       setSuccess('Liquidación generada correctamente.')
       setFactura('')
+      setFechaPago(todayISO())
       setSelected([])
       cargarPreliqsConfirmadas(proveedor.id)
       cargarHistorial(proveedor.id)
@@ -244,12 +254,22 @@ export default function LiquidacionesPage() {
                     sx={{ '& .MuiAutocomplete-popupIndicator': { color: 'rgba(255,255,255,0.4)' }, '& .MuiAutocomplete-clearIndicator': { color: 'rgba(255,255,255,0.4)' } }}
                   />
                 </Grid>
-                <Grid size={{ xs: 12, sm: 5 }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <TextField
-                    label="N° Factura (opcional)" value={factura}
+                    label="N° Factura" value={factura}
                     onChange={(e) => setFactura(e.target.value)}
                     fullWidth size="small" sx={darkField}
                     slotProps={{ input: { startAdornment: <InputAdornment position="start"><ReceiptIcon /></InputAdornment> } }}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 3 }}>
+                  <TextField
+                    label="Fecha de pago"
+                    type="date"
+                    value={fechaPago}
+                    onChange={(e) => setFechaPago(e.target.value)}
+                    fullWidth size="small" sx={darkField}
+                    InputLabelProps={{ shrink: true }}
                   />
                 </Grid>
               </Grid>
@@ -336,6 +356,7 @@ export default function LiquidacionesPage() {
                       <TableCell sx={TH}>Fecha</TableCell>
                       <TableCell sx={TH}>Período</TableCell>
                       <TableCell sx={TH}>Factura</TableCell>
+                      <TableCell sx={TH}>Fecha pago</TableCell>
                       <TableCell sx={TH}>Estado pago</TableCell>
                       <TableCell sx={{ ...TH, textAlign: 'right' }}>Con IVA</TableCell>
                       <TableCell sx={{ ...TH, textAlign: 'right' }}>Gastos</TableCell>
@@ -346,7 +367,7 @@ export default function LiquidacionesPage() {
                   <TableBody>
                     {historial.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} sx={{ ...TD, textAlign: 'center', py: 3, color: 'rgba(255,255,255,0.2)' }}>
+                        <TableCell colSpan={10} sx={{ ...TD, textAlign: 'center', py: 3, color: 'rgba(255,255,255,0.2)' }}>
                           No hay liquidaciones registradas.
                         </TableCell>
                       </TableRow>
@@ -363,6 +384,7 @@ export default function LiquidacionesPage() {
                           <TableCell sx={{ ...TD, color: liq.factura ? '#cbd5e1' : 'rgba(255,255,255,0.2)' }}>
                             {liq.factura || '—'}
                           </TableCell>
+                          <TableCell sx={TD}>{fmtFecha(liq.fecha_pago)}</TableCell>
                           <TableCell sx={TD}><EstadoPagoChip estado={liq.estado_pago} /></TableCell>
                           <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(liq.total_con_iva)}</TableCell>
                           <TableCell sx={{ ...TD, textAlign: 'right', color: '#f87171' }}>{fmtPeso(liq.gastos_periodo)}</TableCell>
@@ -404,7 +426,7 @@ export default function LiquidacionesPage() {
                         {/* Detalle expandido */}
                         {expandedLiq === liq.id && (
                           <TableRow key={`det-${liq.id}`}>
-                            <TableCell colSpan={9} sx={{ p: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                            <TableCell colSpan={10} sx={{ p: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                               <Box sx={{ bgcolor: 'rgba(0,0,0,0.2)', px: 3, py: 2 }}>
                                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>
                                   Detalle de viajes

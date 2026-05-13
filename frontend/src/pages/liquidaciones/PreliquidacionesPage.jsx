@@ -5,6 +5,7 @@ import {
   Alert, CircularProgress, Autocomplete, Divider, Checkbox,
   Table, TableBody, TableCell, TableHead, TableRow, Chip,
   InputAdornment, IconButton, Collapse, TableSortLabel,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -17,7 +18,7 @@ import {
   Print as PrintIcon,
   CloudUpload as DriveIcon,
 } from '@mui/icons-material'
-import { printPreliquidacion, savePreliquidacionToDrive } from '../../utils/print'
+import { printPreliquidacion, savePreliquidacionToDrive, sendPreliquidacionToTelegram } from '../../utils/print'
 
 const IVA = 1.21
 
@@ -48,6 +49,15 @@ const EstadoChip = ({ estado }) => {
     </Box>
   )
 }
+
+const errorMessage = (err, fallback) => {
+  const data = err.response?.data
+  if (data?.detail) return data.detail
+  if (typeof data === 'string') return data.slice(0, 240)
+  if (err.message) return err.message
+  return fallback
+}
+
 
 const darkField = {
   '& .MuiOutlinedInput-root': {
@@ -120,6 +130,11 @@ export default function PreliquidacionesPage() {
   const [orderBy, setOrderBy] = useState('id')
 
   const [loading, setLoading] = useState(false)
+  const [sendingTelegramId, setSendingTelegramId] = useState(null)
+  const [confirmandoLiq, setConfirmandoLiq] = useState(false)
+  const [preliqAConfirmar, setPreliqAConfirmar] = useState(null)
+  const [fechaPago, setFechaPago] = useState(todayISO)
+  const [numeroFactura, setNumeroFactura] = useState('')
   const [savingDriveId, setSavingDriveId] = useState(null)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
@@ -245,11 +260,87 @@ export default function PreliquidacionesPage() {
   }
 
   const handleCambiarEstado = async (preliqId, nuevoEstado) => {
+    setError('')
+    setSuccess('')
     try {
       await client.patch(`/operaciones/preliquidaciones/${preliqId}/`, { estado: nuevoEstado })
+      const mensajes = {
+        enviada: 'Preliquidación enviada.',
+        confirmada: 'Preliquidación confirmada.',
+        para_revisar: 'Preliquidación rechazada.',
+      }
+      setSuccess(mensajes[nuevoEstado] || 'Estado actualizado.')
       refrescarHistorial()
-    } catch {
-      setError('No se pudo cambiar el estado.')
+    } catch (err) {
+      const data = err.response?.data || {}
+      setError(data.detail || Object.values(data).flat().join(' ') || 'No se pudo cambiar el estado.')
+    }
+  }
+
+  const handleEnviarPreliquidacion = async (preliq) => {
+    setSendingTelegramId(preliq.id)
+    setError('')
+    setSuccess('')
+    try {
+      await client.patch(`/operaciones/preliquidaciones/${preliq.id}/`, { estado: 'enviada' })
+      try {
+        await sendPreliquidacionToTelegram(preliq)
+        setSuccess('Preliquidación enviada y Telegram entregado.')
+      } catch (telegramErr) {
+        setSuccess('Preliquidación enviada.')
+        setError(errorMessage(telegramErr, 'No se pudo enviar el PDF por Telegram.'))
+      }
+      refrescarHistorial()
+    } catch (err) {
+      const data = err.response?.data || {}
+      setError(data.detail || Object.values(data).flat().join(' ') || 'No se pudo enviar la preliquidación.')
+    } finally {
+      setSendingTelegramId(null)
+    }
+  }
+
+  const abrirConfirmacionLiquidacion = (preliq) => {
+    setError('')
+    setSuccess('')
+    setPreliqAConfirmar(preliq)
+    setFechaPago(todayISO())
+    setNumeroFactura('')
+  }
+
+  const cerrarConfirmacionLiquidacion = () => {
+    if (confirmandoLiq) return
+    setPreliqAConfirmar(null)
+    setFechaPago(todayISO())
+    setNumeroFactura('')
+  }
+
+  const handleConfirmarYLiquidar = async () => {
+    if (!preliqAConfirmar) return
+    if (!fechaPago || !numeroFactura.trim()) {
+      setError('Completá fecha de pago y número de factura.')
+      return
+    }
+
+    setConfirmandoLiq(true)
+    setError('')
+    setSuccess('')
+    try {
+      await client.post('/operaciones/liquidaciones/generar/', {
+        preliquidacion_ids: [preliqAConfirmar.id],
+        gastos_periodo: preliqAConfirmar.gastos_periodo || '0',
+        factura: numeroFactura.trim(),
+        fecha_pago: fechaPago,
+      })
+      setSuccess('Liquidación generada correctamente.')
+      setPreliqAConfirmar(null)
+      setFechaPago(todayISO())
+      setNumeroFactura('')
+      refrescarHistorial()
+    } catch (err) {
+      const data = err.response?.data || {}
+      setError(data.detail || Object.values(data).flat().join(' ') || 'No se pudo generar la liquidación.')
+    } finally {
+      setConfirmandoLiq(false)
     }
   }
 
@@ -632,32 +723,34 @@ export default function PreliquidacionesPage() {
                           <TableCell sx={TD}><EstadoChip estado={p.estado} /></TableCell>
                           <TableCell sx={TD}>
                             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                              {false && p.estado === 'pendiente' && (
+                              {p.estado === 'pendiente' && (
                                 <Button size="small" sx={{ fontSize: 10, py: 0.2, px: 1, color: '#3b82f6', borderColor: 'rgba(59,130,246,0.4)', textTransform: 'none' }}
                                   variant="outlined"
-                                  onClick={(e) => { e.stopPropagation(); handleCambiarEstado(p.id, 'enviada') }}>
-                                  Enviar
+                                  disabled={sendingTelegramId === p.id}
+                                  onClick={(e) => { e.stopPropagation(); handleEnviarPreliquidacion(p) }}>
+                                  {sendingTelegramId === p.id ? 'Enviando...' : 'Enviar'}
                                 </Button>
                               )}
-                              {false && p.estado === 'enviada' && (
+                              {p.estado === 'enviada' && (
                                 <>
                                   <Button size="small" sx={{ fontSize: 10, py: 0.2, px: 1, color: '#22c55e', borderColor: 'rgba(34,197,94,0.4)', textTransform: 'none' }}
                                     variant="outlined"
-                                    onClick={(e) => { e.stopPropagation(); handleCambiarEstado(p.id, 'confirmada') }}>
+                                    onClick={(e) => { e.stopPropagation(); abrirConfirmacionLiquidacion(p) }}>
                                     Confirmar
                                   </Button>
                                   <Button size="small" sx={{ fontSize: 10, py: 0.2, px: 1, color: '#f97316', borderColor: 'rgba(249,115,22,0.4)', textTransform: 'none' }}
                                     variant="outlined"
                                     onClick={(e) => { e.stopPropagation(); handleCambiarEstado(p.id, 'para_revisar') }}>
-                                    Revisar
+                                    Rechazar
                                   </Button>
                                 </>
                               )}
-                              {false && p.estado === 'para_revisar' && (
+                              {p.estado === 'para_revisar' && (
                                 <Button size="small" sx={{ fontSize: 10, py: 0.2, px: 1, color: '#3b82f6', borderColor: 'rgba(59,130,246,0.4)', textTransform: 'none' }}
                                   variant="outlined"
-                                  onClick={(e) => { e.stopPropagation(); handleCambiarEstado(p.id, 'enviada') }}>
-                                  Re-enviar
+                                  disabled={sendingTelegramId === p.id}
+                                  onClick={(e) => { e.stopPropagation(); handleEnviarPreliquidacion(p) }}>
+                                  {sendingTelegramId === p.id ? 'Enviando...' : 'Re-enviar'}
                                 </Button>
                               )}
                               <IconButton size="small" title="Imprimir"
@@ -848,6 +941,63 @@ export default function PreliquidacionesPage() {
           </Box>
         )}
       </Box>
+      <Dialog
+        open={!!preliqAConfirmar}
+        onClose={cerrarConfirmacionLiquidacion}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              bgcolor: '#1e293b',
+              color: '#fff',
+              borderRadius: 2,
+              border: '1px solid rgba(255,255,255,0.08)',
+              backgroundImage: 'none',
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: 18, bgcolor: '#1e293b', color: '#fff' }}>
+          Confirmar y liquidar
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, bgcolor: '#1e293b' }}>
+          <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
+            {preliqAConfirmar?.proveedor_nombre || '-'} · {fmtFecha(preliqAConfirmar?.periodo_desde)} - {fmtFecha(preliqAConfirmar?.periodo_hasta)}
+          </Typography>
+          <TextField
+            label="Fecha de pago"
+            type="date"
+            value={fechaPago}
+            onChange={(e) => setFechaPago(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={darkField}
+            fullWidth
+          />
+          <TextField
+            label="Número de factura"
+            value={numeroFactura}
+            onChange={(e) => setNumeroFactura(e.target.value)}
+            sx={darkField}
+            fullWidth
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, bgcolor: '#1e293b' }}>
+          <Button onClick={cerrarConfirmacionLiquidacion} disabled={confirmandoLiq} sx={{ color: 'rgba(255,255,255,0.55)', textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmarYLiquidar}
+            disabled={confirmandoLiq || !fechaPago || !numeroFactura.trim()}
+            startIcon={confirmandoLiq ? <CircularProgress size={16} color="inherit" /> : <CheckIcon />}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            {confirmandoLiq ? 'Generando...' : 'Crear liquidación'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

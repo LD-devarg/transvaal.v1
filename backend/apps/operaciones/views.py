@@ -1,4 +1,10 @@
 from decimal import Decimal
+import json
+import uuid
+from urllib.error import HTTPError
+from urllib import request as urlrequest
+
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
 from rest_framework import generics, permissions, status
@@ -22,6 +28,38 @@ from .serializers import (
 )
 
 IVA = Decimal('1.21')
+
+
+def _render_pdf_bytes(html_content):
+    if WeasyHTML is None:
+        raise RuntimeError('WeasyPrint no disponible en este entorno.')
+    weasy_css = '<style>@page { size: A4; margin: 1.4cm; } html, body { width: auto !important; padding: 0 !important; }</style>'
+    html_content = html_content.replace('</head>', weasy_css + '</head>', 1)
+    return WeasyHTML(string=html_content).write_pdf()
+
+
+def _multipart_form_data(fields, files):
+    boundary = f'----transvaal-{uuid.uuid4().hex}'
+    body = bytearray()
+
+    for name, value in fields.items():
+        body.extend(f'--{boundary}\r\n'.encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        body.extend(str(value).encode('utf-8'))
+        body.extend(b'\r\n')
+
+    for name, file_data in files.items():
+        filename, content_type, content = file_data
+        body.extend(f'--{boundary}\r\n'.encode())
+        body.extend(
+            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode()
+        )
+        body.extend(f'Content-Type: {content_type}\r\n\r\n'.encode())
+        body.extend(content)
+        body.extend(b'\r\n')
+
+    body.extend(f'--{boundary}--\r\n'.encode())
+    return bytes(body), f'multipart/form-data; boundary={boundary}'
 
 
 # ── Paginación ─────────────────────────────────────────────────────────────────
@@ -551,7 +589,7 @@ class LiquidacionDetailView(generics.RetrieveUpdateAPIView):
 class GenerarLiquidacionView(APIView):
     """
     POST — convierte preliquidaciones confirmadas en una liquidación.
-    Body: { preliquidacion_ids: [1, 2, ...], gastos_periodo, factura }
+    Body: { preliquidacion_ids: [1, 2, ...], gastos_periodo, factura, fecha_pago }
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -559,14 +597,23 @@ class GenerarLiquidacionView(APIView):
     def post(self, request):
         preliq_ids     = request.data.get('preliquidacion_ids', [])
         gastos_periodo = Decimal(str(request.data.get('gastos_periodo', '0')))
-        factura        = request.data.get('factura', '')
+        factura        = (request.data.get('factura') or '').strip()
+        fecha_pago     = request.data.get('fecha_pago') or None
+
+        if not factura:
+            return Response({'detail': 'Se requiere el número de factura.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not fecha_pago:
+            return Response({'detail': 'Se requiere la fecha de pago.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         preliquidaciones = Preliquidacion.objects.filter(
-            pk__in=preliq_ids, estado=Preliquidacion.Estado.CONFIRMADA
+            pk__in=preliq_ids,
+            estado__in=[Preliquidacion.Estado.ENVIADA, Preliquidacion.Estado.CONFIRMADA],
         ).prefetch_related('detalles', 'detalles__viaje')
 
         if not preliquidaciones.exists():
-            return Response({'detail': 'No hay preliquidaciones confirmadas con esos IDs.'},
+            return Response({'detail': 'No hay preliquidaciones enviadas o confirmadas con esos IDs.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         proveedor    = preliquidaciones.first().proveedor
@@ -584,7 +631,9 @@ class GenerarLiquidacionView(APIView):
             total_sin_iva=total_sin_iva,
             total_con_iva=total_con_iva,
             adeudado_final=adeudado_final,
+            estado_pago=Liquidacion.EstadoPago.PAGADA,
             factura=factura,
+            fecha_pago=fecha_pago,
         )
 
         for preliq in preliquidaciones:
@@ -720,10 +769,67 @@ class GenerarPDFView(APIView):
         html_content = request.data.get('html')
         if not html_content:
             return Response({'detail': 'Se requiere el HTML.'}, status=status.HTTP_400_BAD_REQUEST)
-        # WeasyPrint no procesa @page dentro de @media print — se inyecta explícitamente
-        weasy_css = '<style>@page { size: A4; margin: 1.4cm; } html, body { width: auto !important; padding: 0 !important; }</style>'
-        html_content = html_content.replace('</head>', weasy_css + '</head>', 1)
-        pdf_bytes = WeasyHTML(string=html_content).write_pdf()
+        pdf_bytes = _render_pdf_bytes(html_content)
         return HttpResponse(pdf_bytes, content_type='application/pdf')
+
+
+class EnviarPreliquidacionTelegramView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        if not settings.TELEGRAM_BOT_TOKEN:
+            return Response({'detail': 'TELEGRAM_BOT_TOKEN no esta configurado.'}, status=status.HTTP_400_BAD_REQUEST)
+        if WeasyHTML is None:
+            return Response({'detail': 'WeasyPrint no disponible en este entorno.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        preliq = generics.get_object_or_404(
+            Preliquidacion.objects.select_related('proveedor'),
+            pk=pk,
+        )
+        proveedor = preliq.proveedor
+        if not proveedor.telegram_activo:
+            return Response({'detail': 'El proveedor no tiene Telegram activo.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not proveedor.telegram_chat_id:
+            return Response({'detail': 'El proveedor no tiene telegram_chat_id configurado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        html_content = request.data.get('html')
+        if not html_content:
+            return Response({'detail': 'Se requiere el HTML.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        filename = request.data.get('filename') or f'preliquidacion-{preliq.id}.pdf'
+        caption = f'Hola {proveedor.nombre} te comparto la preliquidación {str(preliq.id).zfill(6)} para que la revises.'
+
+        try:
+            pdf_bytes = _render_pdf_bytes(html_content)
+            body, content_type = _multipart_form_data(
+                {
+                    'chat_id': proveedor.telegram_chat_id,
+                    'caption': caption,
+                },
+                {
+                    'document': (filename, 'application/pdf', pdf_bytes),
+                },
+            )
+            req = urlrequest.Request(
+                f'https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument',
+                data=body,
+                method='POST',
+                headers={'Content-Type': content_type},
+            )
+            with urlrequest.urlopen(req, timeout=20) as res:
+                data = json.loads(res.read().decode('utf-8'))
+        except HTTPError as exc:
+            try:
+                payload = json.loads(exc.read().decode('utf-8'))
+                detail = payload.get('description') or str(exc)
+            except Exception:
+                detail = str(exc)
+            return Response({'detail': f'Telegram rechazo el documento: {detail}'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': f'No se pudo enviar Telegram: {exc}'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        if not data.get('ok'):
+            return Response({'detail': data.get('description') or 'Telegram rechazo el documento.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'ok': True})
 
 

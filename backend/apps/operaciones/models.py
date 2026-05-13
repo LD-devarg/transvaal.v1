@@ -151,6 +151,7 @@ class Liquidacion(models.Model):
     adeudado_final = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     estado_pago    = models.CharField(max_length=20, choices=EstadoPago.choices, default=EstadoPago.PENDIENTE)
     factura        = models.CharField(max_length=100, blank=True)
+    fecha_pago     = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ['-fecha']
