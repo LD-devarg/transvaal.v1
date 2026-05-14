@@ -48,7 +48,11 @@ function normNombre(nombre) {
 
 function docFilename(label, proveedorNombre, fileName) {
   const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : 'bin'
-  return `${label.replace(/\s+/g, '-').toUpperCase()}-${normNombre(proveedorNombre)}.${ext}`
+  return `${docBaseName(label, proveedorNombre)}.${ext}`
+}
+
+function docBaseName(label, proveedorNombre) {
+  return `${label.replace(/\s+/g, '-').toUpperCase()}-${normNombre(proveedorNombre)}`
 }
 
 export default function MiDocumentacionPage() {
@@ -123,6 +127,7 @@ export default function MiDocumentacionPage() {
       const file = archivos[key]
       const label = DOC_TYPES.find((d) => d.key === key).label
       const filename = docFilename(label, proveedor.nombre, file.name)
+      const replacePrefix = docBaseName(label, proveedor.nombre)
 
       newEstados[key] = 'uploading'
       setEstados({ ...newEstados })
@@ -135,6 +140,7 @@ export default function MiDocumentacionPage() {
             file_b64: b64,
             mime_type: file.type || 'application/octet-stream',
             filename,
+            replace_prefix: replacePrefix,
             folder_id: proveedor.carpeta_drive_id,
           }),
         })

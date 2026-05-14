@@ -19,6 +19,7 @@ function doOptions(e) {
  *   file_b64:  string,          // Archivo en Base64 (cualquier tipo)
  *   mime_type: string,          // MIME type del archivo, ej: 'image/jpeg'
  *   filename:  string,          // Ej: "VTV-LUCAS-PALMA.pdf"
+ *   replace_prefix: string,     // Opcional: pisa cualquier archivo que empiece igual, sin importar extension
  *   folder_id: string,          // ID de la carpeta Drive del proveedor
  * }
  *
@@ -29,7 +30,7 @@ function doOptions(e) {
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents)
-    const { pdf_b64, file_b64, mime_type, filename, folder_id } = payload
+    const { pdf_b64, file_b64, mime_type, filename, replace_prefix, folder_id } = payload
 
     const b64      = file_b64 || pdf_b64
     const mimeType = mime_type || 'application/pdf'
@@ -49,6 +50,19 @@ function doPost(e) {
     const existentes = folder.getFilesByName(filename)
     while (existentes.hasNext()) {
       existentes.next().setTrashed(true)
+    }
+
+    // Si se envia replace_prefix, tambien pisa versiones con otra extension.
+    // Ej: "VTV-LUCAS-PALMA.pdf" reemplaza "VTV-LUCAS-PALMA.jpg".
+    if (replace_prefix) {
+      const allFiles = folder.getFiles()
+      while (allFiles.hasNext()) {
+        const existingFile = allFiles.next()
+        const existingName = existingFile.getName()
+        if (existingName === filename || existingName.indexOf(replace_prefix + '.') === 0) {
+          existingFile.setTrashed(true)
+        }
+      }
     }
 
     const file = folder.createFile(blob)

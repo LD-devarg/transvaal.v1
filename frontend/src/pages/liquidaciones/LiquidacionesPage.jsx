@@ -226,7 +226,7 @@ export default function LiquidacionesPage() {
         <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }} onClose={() => setError('')}>{error}</Alert>
       )}
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 300px' }, gap: 2.5, alignItems: 'start' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
 
         {/* Columna principal */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
@@ -339,6 +339,56 @@ export default function LiquidacionesPage() {
                       </Table>
                     </Box>
                   )}
+
+                  {preliqsConfirmadas.length > 0 && (
+                    <Box sx={{
+                      mt: 2,
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: 'rgba(59,130,246,0.06)',
+                      border: '1px solid rgba(59,130,246,0.18)',
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr)) auto' },
+                      alignItems: 'center',
+                      gap: 1.5,
+                    }}>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Preliquidaciones</Typography>
+                        <Typography sx={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>{selected.length}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Sin IVA</Typography>
+                        <Typography sx={{ color: '#fff', fontSize: 14 }}>{fmtPeso(totalSinIva)}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Con IVA</Typography>
+                        <Typography sx={{ color: '#fff', fontSize: 14 }}>{fmtPeso(totalConIva)}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Gastos</Typography>
+                        <Typography sx={{ color: '#f87171', fontSize: 14 }}>{fmtPeso(totalGastos)}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Adeudado</Typography>
+                        <Typography sx={{ color: '#60a5fa', fontSize: 15, fontWeight: 700 }}>{fmtPeso(adeudado)}</Typography>
+                      </Box>
+                      <Button
+                        variant="contained" size="large"
+                        onClick={handleGenerar}
+                        disabled={loading || !proveedor || selected.length === 0}
+                        startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <MoneyIcon />}
+                        sx={{
+                          minWidth: 210, borderRadius: 2, py: 1.3, fontWeight: 700, fontSize: 13,
+                          background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+                          boxShadow: '0 4px 20px rgba(59,130,246,0.35)',
+                          '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)', boxShadow: '0 4px 24px rgba(59,130,246,0.5)' },
+                          '&.Mui-disabled': { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' },
+                        }}
+                      >
+                        {loading ? 'Generando...' : 'Generar liquidacion'}
+                      </Button>
+                    </Box>
+                  )}
                 </>
               )}
             </CardContent>
@@ -355,6 +405,7 @@ export default function LiquidacionesPage() {
                       <TableCell sx={TH}>#</TableCell>
                       <TableCell sx={TH}>Fecha</TableCell>
                       <TableCell sx={TH}>Período</TableCell>
+                      <TableCell sx={TH}>Proveedor / Chofer</TableCell>
                       <TableCell sx={TH}>Factura</TableCell>
                       <TableCell sx={TH}>Fecha pago</TableCell>
                       <TableCell sx={TH}>Estado pago</TableCell>
@@ -367,7 +418,7 @@ export default function LiquidacionesPage() {
                   <TableBody>
                     {historial.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} sx={{ ...TD, textAlign: 'center', py: 3, color: 'rgba(255,255,255,0.2)' }}>
+                        <TableCell colSpan={11} sx={{ ...TD, textAlign: 'center', py: 3, color: 'rgba(255,255,255,0.2)' }}>
                           No hay liquidaciones registradas.
                         </TableCell>
                       </TableRow>
@@ -381,6 +432,7 @@ export default function LiquidacionesPage() {
                           <TableCell sx={TD}>{liq.id}</TableCell>
                           <TableCell sx={TD}>{fmtFecha(liq.fecha)}</TableCell>
                           <TableCell sx={TD}>{fmtFecha(liq.periodo_desde)} – {fmtFecha(liq.periodo_hasta)}</TableCell>
+                          <TableCell sx={{ ...TD, color: '#e2e8f0', fontWeight: 600 }}>{liq.proveedor_nombre || '-'}</TableCell>
                           <TableCell sx={{ ...TD, color: liq.factura ? '#cbd5e1' : 'rgba(255,255,255,0.2)' }}>
                             {liq.factura || '—'}
                           </TableCell>
@@ -426,7 +478,7 @@ export default function LiquidacionesPage() {
                         {/* Detalle expandido */}
                         {expandedLiq === liq.id && (
                           <TableRow key={`det-${liq.id}`}>
-                            <TableCell colSpan={10} sx={{ p: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                            <TableCell colSpan={11} sx={{ p: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                               <Box sx={{ bgcolor: 'rgba(0,0,0,0.2)', px: 3, py: 2 }}>
                                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>
                                   Detalle de viajes
@@ -471,78 +523,6 @@ export default function LiquidacionesPage() {
                   </TableBody>
                 </Table>
               </Box>
-            </CardContent>
-          </Card>
-        </Box>
-
-        {/* Panel lateral resumen */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Card sx={{
-            ...CARD,
-            border: selected.length > 0
-              ? '1px solid rgba(59,130,246,0.35)'
-              : '1px solid rgba(255,255,255,0.07)',
-            transition: 'border-color 0.3s',
-          }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#fff' }}>
-                Resumen
-              </Typography>
-
-              {selected.length === 0 ? (
-                <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>
-                  Seleccioná preliquidaciones confirmadas para ver el cálculo.
-                </Typography>
-              ) : (
-                <>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Preliquidaciones</Typography>
-                    <Typography sx={{ color: '#fff', fontSize: 12, fontWeight: 600 }}>{selected.length}</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Total sin IVA</Typography>
-                    <Typography sx={{ color: '#fff', fontSize: 12 }}>{fmtPeso(totalSinIva)}</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>IVA 21%</Typography>
-                    <Typography sx={{ color: '#fff', fontSize: 12 }}>{fmtPeso(totalConIva - totalSinIva)}</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Total con IVA</Typography>
-                    <Typography sx={{ color: '#fff', fontSize: 12 }}>{fmtPeso(totalConIva)}</Typography>
-                  </Box>
-
-                  {totalGastos > 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Gastos</Typography>
-                      <Typography sx={{ color: '#f87171', fontSize: 12 }}>− {fmtPeso(totalGastos)}</Typography>
-                    </Box>
-                  )}
-
-                  <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', my: 1.5 }} />
-
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2.5 }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 600 }}>Adeudado</Typography>
-                    <Typography sx={{ color: '#60a5fa', fontSize: 14, fontWeight: 700 }}>{fmtPeso(adeudado)}</Typography>
-                  </Box>
-                </>
-              )}
-
-              <Button
-                fullWidth variant="contained"
-                onClick={handleGenerar}
-                disabled={loading || !proveedor || selected.length === 0}
-                startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <MoneyIcon />}
-                sx={{
-                  background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
-                  borderRadius: 2, py: 1.2, fontWeight: 700, fontSize: 13,
-                  boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-                  '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' },
-                  '&:disabled': { background: 'rgba(59,130,246,0.2)', color: 'rgba(255,255,255,0.3)' },
-                }}
-              >
-                Generar liquidación
-              </Button>
             </CardContent>
           </Card>
         </Box>

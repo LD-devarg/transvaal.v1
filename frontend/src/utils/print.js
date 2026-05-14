@@ -154,7 +154,7 @@ const CSS = `
   /* ── Meta info grid ── */
   .meta {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, 0.9fr);
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 6px;
     margin-bottom: 12px;
   }
@@ -392,7 +392,7 @@ function buildGastosPage(gastos) {
 }
 
 // ─── Template HTML ────────────────────────────────────────────────────────────
-function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fechaEmision, rows, totalSinIva, totalConIva, gastosPeriodo, adeudadoFinal, gastos = [] }) {
+function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fechaEmision, extraMeta = [], rows, totalSinIva, totalConIva, gastosPeriodo, adeudadoFinal, gastos = [] }) {
   const now = new Date()
   const fechaGen = now.toLocaleDateString('es-AR')
   const horaGen = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
@@ -433,6 +433,11 @@ function buildHTML({ tipo, id, proveedorNombre, periodoDesde, periodoHasta, fech
       <div class="meta-lbl">Fecha de emisión</div>
       <div class="meta-val">${fmtFecha(fechaEmision)}</div>
     </div>
+    ${extraMeta.map(({ label, value }) => `
+    <div class="meta-box">
+      <div class="meta-lbl">${label}</div>
+      <div class="meta-val">${value || '-'}</div>
+    </div>`).join('')}
   </div>
 
   <div class="section-title"><span>Detalle de viajes (${rows.length} items)</span></div>
@@ -640,6 +645,10 @@ function buildLiquidacionDocument(liq) {
     periodoDesde: liq.periodo_desde,
     periodoHasta: liq.periodo_hasta,
     fechaEmision: liq.fecha,
+    extraMeta: [
+      { label: 'N° Factura', value: liq.factura || '-' },
+      { label: 'Fecha de pago', value: fmtFecha(liq.fecha_pago) },
+    ],
     rows: liq.detalles || [],
     totalSinIva: liq.total_sin_iva,
     totalConIva: liq.total_con_iva,

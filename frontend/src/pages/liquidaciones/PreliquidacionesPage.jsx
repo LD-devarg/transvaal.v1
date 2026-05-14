@@ -17,6 +17,8 @@ import {
   Receipt as ReceiptIcon,
   Print as PrintIcon,
   CloudUpload as DriveIcon,
+  Add as AddIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material'
 import { printPreliquidacion, savePreliquidacionToDrive, sendPreliquidacionToTelegram } from '../../utils/print'
 
@@ -49,6 +51,8 @@ const EstadoChip = ({ estado }) => {
     </Box>
   )
 }
+
+const canModificarPreliq = (preliq) => ['pendiente', 'enviada', 'para_revisar'].includes(preliq?.estado)
 
 const errorMessage = (err, fallback) => {
   const data = err.response?.data
@@ -131,6 +135,9 @@ export default function PreliquidacionesPage() {
 
   const [loading, setLoading] = useState(false)
   const [sendingTelegramId, setSendingTelegramId] = useState(null)
+  const [viajesDisponibles, setViajesDisponibles] = useState({})
+  const [loadingViajesDisponibles, setLoadingViajesDisponibles] = useState({})
+  const [modificandoViaje, setModificandoViaje] = useState(null)
   const [confirmandoLiq, setConfirmandoLiq] = useState(false)
   const [preliqAConfirmar, setPreliqAConfirmar] = useState(null)
   const [fechaPago, setFechaPago] = useState(todayISO)
@@ -362,6 +369,68 @@ export default function PreliquidacionesPage() {
       setError(err.message || 'No se pudo guardar el PDF en Drive.')
     } finally {
       setSavingDriveId(null)
+    }
+  }
+
+  const actualizarPreliqEnHistorial = (preliqActualizada) => {
+    setHistorial((prev) => prev.map((p) => (p.id === preliqActualizada.id ? preliqActualizada : p)))
+  }
+
+  const cargarViajesDisponibles = async (preliq) => {
+    setLoadingViajesDisponibles((prev) => ({ ...prev, [preliq.id]: true }))
+    setError('')
+    try {
+      const params = new URLSearchParams({
+        proveedor: String(preliq.proveedor),
+        desde: preliq.periodo_desde,
+        hasta: preliq.periodo_hasta,
+        estado: 'habilitado',
+        sin_preliquidar: 'true',
+      })
+      const r = await client.get(`/operaciones/viajes/?${params.toString()}`)
+      setViajesDisponibles((prev) => ({ ...prev, [preliq.id]: r.data }))
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudieron cargar viajes disponibles.'))
+    } finally {
+      setLoadingViajesDisponibles((prev) => ({ ...prev, [preliq.id]: false }))
+    }
+  }
+
+  const handleAgregarViajePreliq = async (preliq, viaje) => {
+    setModificandoViaje(`${preliq.id}-add-${viaje.id}`)
+    setError('')
+    setSuccess('')
+    try {
+      const r = await client.post(`/operaciones/preliquidaciones/${preliq.id}/viajes/`, { viaje_id: viaje.id })
+      actualizarPreliqEnHistorial(r.data)
+      setViajesDisponibles((prev) => ({
+        ...prev,
+        [preliq.id]: (prev[preliq.id] || []).filter((v) => v.id !== viaje.id),
+      }))
+      setSuccess('Viaje agregado. La preliquidacion volvio a pendiente para reenviar.')
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudo agregar el viaje.'))
+    } finally {
+      setModificandoViaje(null)
+    }
+  }
+
+  const handleQuitarViajePreliq = async (preliq, detalle) => {
+    setModificandoViaje(`${preliq.id}-del-${detalle.viaje}`)
+    setError('')
+    setSuccess('')
+    try {
+      const r = await client.delete(`/operaciones/preliquidaciones/${preliq.id}/viajes/${detalle.viaje}/`)
+      actualizarPreliqEnHistorial(r.data)
+      setViajesDisponibles((prev) => {
+        if (!prev[preliq.id]) return prev
+        return { ...prev, [preliq.id]: [] }
+      })
+      setSuccess('Viaje quitado. La preliquidacion volvio a pendiente para reenviar.')
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudo quitar el viaje.'))
+    } finally {
+      setModificandoViaje(null)
     }
   }
 
@@ -785,6 +854,7 @@ export default function PreliquidacionesPage() {
                                       <TableCell sx={TH}>Adicionales</TableCell>
                                       <TableCell sx={{ ...TH, textAlign: 'right' }}>Sin IVA</TableCell>
                                       <TableCell sx={{ ...TH, textAlign: 'right' }}>Con IVA</TableCell>
+                                      {canModificarPreliq(p) && <TableCell sx={{ ...TH, width: 44 }} />}
                                     </TableRow>
                                   </TableHead>
                                   <TableBody>
@@ -812,10 +882,80 @@ export default function PreliquidacionesPage() {
                                         </TableCell>
                                         <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(d.tarifa_sin_iva)}</TableCell>
                                         <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(d.tarifa_con_iva)}</TableCell>
+                                        {canModificarPreliq(p) && (
+                                          <TableCell sx={TD}>
+                                            <IconButton size="small" title="Quitar viaje"
+                                              disabled={modificandoViaje === `${p.id}-del-${d.viaje}`}
+                                              onClick={(e) => { e.stopPropagation(); handleQuitarViajePreliq(p, d) }}
+                                              sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#f87171' } }}>
+                                              {modificandoViaje === `${p.id}-del-${d.viaje}` ? <CircularProgress size={14} /> : <DeleteIcon sx={{ fontSize: 15 }} />}
+                                            </IconButton>
+                                          </TableCell>
+                                        )}
                                       </TableRow>
                                     ))}
                                   </TableBody>
                                 </Table>
+
+                                {canModificarPreliq(p) && (
+                                  <Box sx={{ mt: 2.5 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1 }}>
+                                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>
+                                        Agregar viajes habilitados
+                                      </Typography>
+                                      <Button size="small" variant="text"
+                                        disabled={!!loadingViajesDisponibles[p.id]}
+                                        startIcon={loadingViajesDisponibles[p.id] ? <CircularProgress size={13} color="inherit" /> : <SearchIcon />}
+                                        onClick={(e) => { e.stopPropagation(); cargarViajesDisponibles(p) }}
+                                        sx={{ color: '#60a5fa', fontSize: 11, textTransform: 'none', py: 0 }}>
+                                        Buscar disponibles
+                                      </Button>
+                                    </Box>
+                                    {viajesDisponibles[p.id] && (
+                                      viajesDisponibles[p.id].length === 0 ? (
+                                        <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>
+                                          No hay viajes habilitados sin preliquidar para este proveedor y periodo.
+                                        </Typography>
+                                      ) : (
+                                        <Table size="small">
+                                          <TableHead>
+                                            <TableRow>
+                                              <TableCell sx={TH}>Fecha</TableCell>
+                                              <TableCell sx={TH}>Cliente</TableCell>
+                                              <TableCell sx={TH}>Destino</TableCell>
+                                              <TableCell sx={TH}>Remito</TableCell>
+                                              <TableCell sx={{ ...TH, textAlign: 'right' }}>Precio</TableCell>
+                                              <TableCell sx={{ ...TH, width: 44 }} />
+                                            </TableRow>
+                                          </TableHead>
+                                          <TableBody>
+                                            {viajesDisponibles[p.id].map((v) => {
+                                              const adics = (v.adicionales || []).reduce((s, a) => s + (parseFloat(a.precio_snapshot) || 0), 0)
+                                              const precio = (parseFloat(v.precio_tarifa) || 0) + adics
+                                              return (
+                                                <TableRow key={v.id}>
+                                                  <TableCell sx={TD}>{fmtFecha(v.fecha)}</TableCell>
+                                                  <TableCell sx={TD}>{v.cliente_nombre}</TableCell>
+                                                  <TableCell sx={TD}>{v.salida_descripcion}</TableCell>
+                                                  <TableCell sx={TD}>{v.remito || '-'}</TableCell>
+                                                  <TableCell sx={{ ...TD, textAlign: 'right' }}>{fmtPeso(precio)}</TableCell>
+                                                  <TableCell sx={TD}>
+                                                    <IconButton size="small" title="Agregar viaje"
+                                                      disabled={modificandoViaje === `${p.id}-add-${v.id}`}
+                                                      onClick={(e) => { e.stopPropagation(); handleAgregarViajePreliq(p, v) }}
+                                                      sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#60a5fa' } }}>
+                                                      {modificandoViaje === `${p.id}-add-${v.id}` ? <CircularProgress size={14} /> : <AddIcon sx={{ fontSize: 16 }} />}
+                                                    </IconButton>
+                                                  </TableCell>
+                                                </TableRow>
+                                              )
+                                            })}
+                                          </TableBody>
+                                        </Table>
+                                      )
+                                    )}
+                                  </Box>
+                                )}
 
                                 <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10, mt: 2.5 }}>
                                   Gastos descontados

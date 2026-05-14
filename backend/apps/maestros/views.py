@@ -2,6 +2,8 @@ import json
 from urllib import parse, request as urlrequest
 
 from django.conf import settings
+from django.db import transaction
+from decimal import Decimal
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -204,20 +206,37 @@ class TarifaActualizarView(APIView):
 
 
 class TarifaDetailView(generics.DestroyAPIView):
-    """DELETE → marca la tarifa como inactiva (soft delete)."""
+    """DELETE -> elimina una version y restaura la anterior si correspondia."""
     queryset           = Tarifa.objects.all()
     serializer_class   = TarifaSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def destroy(self, request, *args, **kwargs):
-        tarifa = self.get_object()
-        if tarifa.viajes.exists():
-            return Response(
-                {'detail': 'No se puede eliminar: hay viajes que usan esta tarifa.'},
-                status=status.HTTP_400_BAD_REQUEST
+        with transaction.atomic():
+            tarifa = self.get_object()
+            if tarifa.viajes.exists():
+                return Response(
+                    {'detail': 'No se puede eliminar: hay viajes que usan esta version de tarifa.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            was_active = tarifa.activo
+            previous = (
+                Tarifa.objects
+                .select_for_update()
+                .filter(salida=tarifa.salida, cliente=tarifa.cliente)
+                .exclude(pk=tarifa.pk)
+                .order_by('-version')
+                .first()
             )
-        tarifa.activo = False
-        tarifa.save(update_fields=['activo'])
+
+            tarifa.delete()
+
+            if was_active and previous:
+                previous.activo = True
+                previous.vigente_hasta = None
+                previous.save(update_fields=['activo', 'vigente_hasta'])
+
         delete_cache_pattern('maestros:*')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -233,6 +252,108 @@ class TarifaHistorialView(CachedListMixin, generics.ListAPIView):
             salida_id=self.kwargs['salida_id'],
             cliente_id=self.kwargs['cliente_id'],
         ).order_by('-version')
+
+
+class TarifaRecalcularView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        from apps.operaciones.models import Viaje, Preliquidacion, PreliquidacionDetalle
+
+        tarifas_activas = {
+            (t.salida_id, t.cliente_id): t
+            for t in Tarifa.objects.select_for_update().filter(activo=True)
+        }
+
+        viajes_actualizados = 0
+        viajes_sin_tarifa = 0
+        viajes_bloqueados = 0
+        preliq_ids = set()
+        estados_editables = {Preliquidacion.Estado.PENDIENTE, Preliquidacion.Estado.PARA_REVISAR}
+
+        viajes = (
+            Viaje.objects
+            .select_for_update(of=('self',))
+            .select_related('salida', 'cliente', 'proveedor', 'tarifa', 'preliquidacion')
+            .exclude(estado='liquidado')
+        )
+
+        for viaje in viajes:
+            tarifa = tarifas_activas.get((viaje.salida_id, viaje.cliente_id))
+            if not tarifa:
+                viajes_sin_tarifa += 1
+                continue
+            if viaje.preliquidacion_id and viaje.preliquidacion.estado not in estados_editables:
+                viajes_bloqueados += 1
+                continue
+            if viaje.tarifa_id != tarifa.id:
+                viaje.tarifa = tarifa
+                viaje.save(update_fields=['tarifa'])
+                viajes_actualizados += 1
+            if viaje.preliquidacion_id:
+                preliq_ids.add(viaje.preliquidacion_id)
+
+        detalles_actualizados = 0
+        detalles = (
+            PreliquidacionDetalle.objects
+            .select_related('preliquidacion', 'viaje__salida', 'viaje__cliente', 'viaje__proveedor', 'viaje__tarifa')
+            .prefetch_related('viaje__adicionales')
+            .filter(preliquidacion_id__in=preliq_ids)
+        )
+
+        for detalle in detalles:
+            viaje = detalle.viaje
+            precio_sin_iva = viaje.precio_tarifa()
+            precio_con_iva = (precio_sin_iva * Decimal('1.21')).quantize(Decimal('0.01'))
+            detalle.fecha_viaje = viaje.fecha
+            detalle.chofer_snapshot = viaje.proveedor.chofer
+            detalle.cliente_snapshot = viaje.cliente.nombre
+            detalle.salida_snapshot = viaje.salida.descripcion
+            detalle.remito_snapshot = viaje.remito
+            detalle.adicionales_snapshot = [
+                {
+                    'nombre': a.nombre_snapshot,
+                    'descripcion': a.descripcion_snapshot,
+                    'precio': str(a.precio_snapshot),
+                }
+                for a in viaje.adicionales.all()
+            ]
+            detalle.tarifa_sin_iva = precio_sin_iva
+            detalle.tarifa_con_iva = precio_con_iva
+            detalle.adeudado_parcial = precio_con_iva
+            detalle.save()
+            detalles_actualizados += 1
+
+        preliqs_actualizadas = 0
+        preliqs = (
+            Preliquidacion.objects
+            .select_for_update()
+            .prefetch_related('detalles__viaje__tarifa', 'detalles__viaje__adicionales', 'gastos')
+            .filter(id__in=preliq_ids)
+        )
+        for preliq in preliqs:
+            total_sin_iva = Decimal('0')
+            for detalle in preliq.detalles.all():
+                viaje = detalle.viaje
+                adicionales = sum((a.precio_snapshot for a in viaje.adicionales.all()), Decimal('0'))
+                total_sin_iva += viaje.precio_tarifa() + adicionales
+            total_con_iva = (total_sin_iva * Decimal('1.21')).quantize(Decimal('0.01'))
+            gastos_periodo = Decimal(str(sum(g.total_gasto for g in preliq.gastos.all()))).quantize(Decimal('0.01'))
+            preliq.total_sin_iva = total_sin_iva
+            preliq.total_con_iva = total_con_iva
+            preliq.gastos_periodo = gastos_periodo
+            preliq.adeudado_final = (total_con_iva - gastos_periodo).quantize(Decimal('0.01'))
+            preliq.save(update_fields=['total_sin_iva', 'total_con_iva', 'gastos_periodo', 'adeudado_final'])
+            preliqs_actualizadas += 1
+
+        return Response({
+            'viajes_actualizados': viajes_actualizados,
+            'viajes_sin_tarifa': viajes_sin_tarifa,
+            'viajes_bloqueados': viajes_bloqueados,
+            'detalles_actualizados': detalles_actualizados,
+            'preliquidaciones_actualizadas': preliqs_actualizadas,
+        })
 
 
 class AdicionalListCreateView(CachedListMixin, generics.ListCreateAPIView):

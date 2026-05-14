@@ -64,6 +64,18 @@ function buildListUrl(folderId) {
   return `${GAS_URL}?${params.toString()}`
 }
 
+function buildDriveFolderUrl(folderId) {
+  return `https://drive.google.com/drive/folders/${folderId}`
+}
+
+function normalizeFiles(data) {
+  if (Array.isArray(data?.files)) return data.files
+  if (Array.isArray(data?.items)) return data.items
+  if (Array.isArray(data?.documents)) return data.documents
+  if (Array.isArray(data)) return data
+  return null
+}
+
 export default function DocumentacionPage() {
   const [proveedores, setProveedores] = useState([])
   const [loading, setLoading] = useState(false)
@@ -104,7 +116,11 @@ export default function DocumentacionPage() {
       const res = await fetch(buildListUrl(proveedor.carpeta_drive_id))
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'No se pudieron obtener los documentos.')
-      setDocs(data.files || [])
+      const files = normalizeFiles(data)
+      if (!files) {
+        throw new Error('El Apps Script respondio correctamente, pero no devolvio la lista de archivos. Revisa que el Web App este redeployado con la accion "list".')
+      }
+      setDocs(files)
     } catch (err) {
       setDocs([])
       setDocsError(err.message || 'No se pudieron obtener los documentos.')
@@ -245,6 +261,19 @@ export default function DocumentacionPage() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {selected?.carpeta_drive_id && (
+              <Button
+                component={Link}
+                href={buildDriveFolderUrl(selected.carpeta_drive_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                size="small"
+                endIcon={<OpenIcon sx={{ fontSize: 15 }} />}
+                sx={{ textTransform: 'none', color: '#93c5fd' }}
+              >
+                Abrir carpeta
+              </Button>
+            )}
             <IconButton
               onClick={() => selected && cargarDocumentos(selected)}
               disabled={docsLoading}

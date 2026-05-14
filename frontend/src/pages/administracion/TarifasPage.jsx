@@ -1,12 +1,17 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import client from '../../api/client'
+import { Fragment } from 'react'
 import {
   Box, Typography, Card, CardContent, Button, TextField, CircularProgress,
   Alert, Table, TableBody, TableCell, TableHead, TableRow,
   Dialog, DialogTitle, DialogContent, IconButton, Grid, Autocomplete,
-  InputAdornment,
+  InputAdornment, Collapse,
 } from '@mui/material'
-import { Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon, Delete as DeleteIcon } from '@mui/icons-material'
+import {
+  Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon, Delete as DeleteIcon,
+  KeyboardArrowDown as ExpandMoreIcon, KeyboardArrowUp as ExpandLessIcon,
+  Sync as SyncIcon,
+} from '@mui/icons-material'
 
 const darkField = {
   '& .MuiOutlinedInput-root': { color: '#fff', fontSize: 13, bgcolor: 'rgba(255,255,255,0.03)', '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.25)' }, '&.Mui-focused fieldset': { borderColor: '#3b82f6', borderWidth: 2 } },
@@ -50,6 +55,12 @@ export default function TarifasPage() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [deleting, setDeleting]           = useState(false)
   const [deleteError, setDeleteError]     = useState('')
+  const [expandedTarifa, setExpandedTarifa] = useState(null)
+  const [historial, setHistorial] = useState({})
+  const [histLoading, setHistLoading] = useState({})
+  const [confirmRecalc, setConfirmRecalc] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcError, setRecalcError] = useState('')
 
   useEffect(() => {
     client.get('/maestros/clientes/').then(r => setClientes(r.data))
@@ -73,9 +84,10 @@ export default function TarifasPage() {
 
   const abrirNueva = (t = null) => {
     if (t) {
-      const cli = clientes.find(c => c.id === t.cliente) || null
+      const cli = clientes.find(c => c.id === t.cliente) || { id: t.cliente, nombre: t.cliente_nombre }
       setForm({
-        cliente: cli, salida: null,
+        cliente: cli,
+        salida: { id: t.salida, descripcion: t.salida_descripcion },
         precio_cat_3ero_sin_semi: t.precio_cat_3ero_sin_semi || '',
         precio_cat_1: t.precio_cat_1 || '', precio_cat_2: t.precio_cat_2 || '', precio_cat_3: t.precio_cat_3 || '',
         vigente_desde: new Date().toISOString().slice(0, 10),
@@ -85,6 +97,22 @@ export default function TarifasPage() {
       setForm(INIT); setPrefillTarifa(null)
     }
     setError(''); setModal(true)
+  }
+
+  const toggleHistorial = async (tarifa) => {
+    const nextOpen = expandedTarifa === tarifa.id ? null : tarifa.id
+    setExpandedTarifa(nextOpen)
+    if (!nextOpen || historial[tarifa.id]) return
+
+    setHistLoading((s) => ({ ...s, [tarifa.id]: true }))
+    try {
+      const r = await client.get(`/maestros/tarifas/historial/${tarifa.salida}/${tarifa.cliente}/`)
+      setHistorial((s) => ({ ...s, [tarifa.id]: r.data.filter((h) => h.id !== tarifa.id) }))
+    } catch {
+      setHistorial((s) => ({ ...s, [tarifa.id]: [] }))
+    } finally {
+      setHistLoading((s) => ({ ...s, [tarifa.id]: false }))
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -98,7 +126,11 @@ export default function TarifasPage() {
     PRECIOS.forEach(p => { if (form[p.key] !== '') payload[p.key] = form[p.key] })
     try {
       await client.post('/maestros/tarifas/actualizar/', payload)
-      setModal(false); setSuccess('Tarifa guardada (nueva versión creada).'); cargar()
+      setModal(false)
+      setExpandedTarifa(null)
+      setHistorial({})
+      setSuccess('Tarifa guardada (nueva versión creada).')
+      cargar()
     } catch (err) {
       const d = err.response?.data || {}
       setError(Object.values(d).flat().join(' ') || 'Error al guardar.')
@@ -113,12 +145,34 @@ export default function TarifasPage() {
     try {
       await client.delete(`/maestros/tarifas/${confirmDelete.id}/`)
       setConfirmDelete(null)
-      setSuccess('Tarifa eliminada.')
+      setExpandedTarifa(null)
+      setHistorial({})
+      setSuccess('Version de tarifa eliminada.')
       cargar()
     } catch (err) {
       const d = err.response?.data || {}
       setDeleteError(d.detail || 'No se pudo eliminar.')
     } finally { setDeleting(false) }
+  }
+
+  const handleRecalcular = async () => {
+    setRecalculating(true); setRecalcError('')
+    try {
+      const r = await client.post('/maestros/tarifas/recalcular/')
+      const data = r.data || {}
+      setConfirmRecalc(false)
+      setExpandedTarifa(null)
+      setHistorial({})
+      setSuccess(
+        `Recalculo completo: ${data.viajes_actualizados || 0} viajes, ` +
+        `${data.preliquidaciones_actualizadas || 0} preliquidaciones. ` +
+        `Sin tarifa: ${data.viajes_sin_tarifa || 0}. Bloqueados: ${data.viajes_bloqueados || 0}.`
+      )
+      cargar()
+    } catch (err) {
+      const d = err.response?.data || {}
+      setRecalcError(d.detail || 'No se pudo recalcular.')
+    } finally { setRecalculating(false) }
   }
 
   return (
@@ -128,7 +182,17 @@ export default function TarifasPage() {
           <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', letterSpacing: 1, textTransform: 'uppercase', fontSize: 11 }}>Administración</Typography>
           <Typography variant="h5" sx={{ fontWeight: 700, color: '#fff', mt: 0.5 }}>Tarifas</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => abrirNueva()} sx={BTN_SX}>Nueva tarifa</Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<SyncIcon />} onClick={() => { setConfirmRecalc(true); setRecalcError('') }}
+            sx={{
+              fontWeight: 600, fontSize: 13, borderRadius: 2, px: 2,
+              color: '#38bdf8', borderColor: 'rgba(56,189,248,0.4)',
+              '&:hover': { borderColor: '#38bdf8', bgcolor: 'rgba(56,189,248,0.1)' },
+            }}>
+            Recalcular
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => abrirNueva()} sx={BTN_SX}>Nueva tarifa</Button>
+        </Box>
       </Box>
 
       {success && <Alert severity="success" sx={{ mb: 3, borderRadius: 2, bgcolor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#86efac' }} onClose={() => setSuccess('')}>{success}</Alert>}
@@ -160,30 +224,87 @@ export default function TarifasPage() {
             <TableBody>
               {loading && <TableRow><TableCell colSpan={9} sx={{ textAlign: 'center', py: 4, border: 'none' }}><CircularProgress size={24} sx={{ color: '#3b82f6' }} /></TableCell></TableRow>}
               {!loading && lista.length === 0 && <TableRow><TableCell colSpan={9} sx={{ ...TD, textAlign: 'center', py: 4, color: 'rgba(255,255,255,0.2)' }}>Sin tarifas activas.</TableCell></TableRow>}
-              {lista.map((t) => (
-                <TableRow key={t.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
-                  <TableCell sx={{ ...TD, fontWeight: 500, color: '#fff' }}>{t.cliente_nombre}</TableCell>
-                  <TableCell sx={TD}>{t.salida_descripcion}</TableCell>
-                  <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_3ero_sin_semi)}</TableCell>
-                  <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_1)}</TableCell>
-                  <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_2)}</TableCell>
-                  <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_3)}</TableCell>
-                  <TableCell sx={TD}>{fmtFecha(t.vigente_desde)}</TableCell>
-                  <TableCell sx={{ ...TD, color: 'rgba(255,255,255,0.35)' }}>v{t.version}</TableCell>
-                  <TableCell sx={TD}>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <IconButton size="small" onClick={() => abrirNueva(t)} title="Actualizar tarifa"
-                        sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
-                        <RefreshIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => { setConfirmDelete(t); setDeleteError('') }} title="Eliminar"
-                        sx={{ color: 'rgba(255,255,255,0.2)', '&:hover': { color: '#f87171' } }}>
-                        <DeleteIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {lista.map((t) => {
+                const open = expandedTarifa === t.id
+                const versiones = historial[t.id] || []
+                const loadingHist = !!histLoading[t.id]
+
+                return (
+                  <Fragment key={t.id}>
+                    <TableRow onClick={() => toggleHistorial(t)}
+                      sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                      <TableCell sx={{ ...TD, fontWeight: 500, color: '#fff' }}>{t.cliente_nombre}</TableCell>
+                      <TableCell sx={TD}>{t.salida_descripcion}</TableCell>
+                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_3ero_sin_semi)}</TableCell>
+                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_1)}</TableCell>
+                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_2)}</TableCell>
+                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#60a5fa' }}>{fmtPeso(t.precio_cat_3)}</TableCell>
+                      <TableCell sx={TD}>{fmtFecha(t.vigente_desde)}</TableCell>
+                      <TableCell sx={{ ...TD, color: 'rgba(255,255,255,0.35)' }}>v{t.version}</TableCell>
+                      <TableCell sx={TD}>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); abrirNueva(t) }} title="Actualizar tarifa"
+                            sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}>
+                            <RefreshIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(t); setDeleteError('') }} title="Eliminar"
+                            sx={{ color: 'rgba(255,255,255,0.2)', '&:hover': { color: '#f87171' } }}>
+                            <DeleteIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                          <IconButton size="small" sx={{ color: 'rgba(255,255,255,0.25)' }}>
+                            {open ? <ExpandLessIcon sx={{ fontSize: 17 }} /> : <ExpandMoreIcon sx={{ fontSize: 17 }} />}
+                          </IconButton>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={9} sx={{ p: 0, border: 0 }}>
+                        <Collapse in={open} timeout="auto" unmountOnExit>
+                          <Box sx={{ bgcolor: 'rgba(0,0,0,0.18)', px: 2.5, py: 2, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', mb: 1 }}>
+                              Historial de versiones
+                            </Typography>
+                            {loadingHist ? (
+                              <Box sx={{ py: 1 }}><CircularProgress size={18} sx={{ color: '#3b82f6' }} /></Box>
+                            ) : versiones.length === 0 ? (
+                              <Typography sx={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>
+                                Sin versiones anteriores.
+                              </Typography>
+                            ) : (
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell sx={TH}>Version</TableCell>
+                                    <TableCell sx={TH}>Desde</TableCell>
+                                    <TableCell sx={TH}>Hasta</TableCell>
+                                    <TableCell sx={{ ...TH, textAlign: 'right' }}>3ero S/Semi</TableCell>
+                                    <TableCell sx={{ ...TH, textAlign: 'right' }}>Cat 1</TableCell>
+                                    <TableCell sx={{ ...TH, textAlign: 'right' }}>Cat 2</TableCell>
+                                    <TableCell sx={{ ...TH, textAlign: 'right' }}>Cat 3</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {versiones.map((v) => (
+                                    <TableRow key={v.id}>
+                                      <TableCell sx={{ ...TD, color: 'rgba(255,255,255,0.35)' }}>v{v.version}</TableCell>
+                                      <TableCell sx={TD}>{fmtFecha(v.vigente_desde)}</TableCell>
+                                      <TableCell sx={TD}>{fmtFecha(v.vigente_hasta)}</TableCell>
+                                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#93c5fd' }}>{fmtPeso(v.precio_cat_3ero_sin_semi)}</TableCell>
+                                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#93c5fd' }}>{fmtPeso(v.precio_cat_1)}</TableCell>
+                                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#93c5fd' }}>{fmtPeso(v.precio_cat_2)}</TableCell>
+                                      <TableCell sx={{ ...TD, textAlign: 'right', color: '#93c5fd' }}>{fmtPeso(v.precio_cat_3)}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -207,13 +328,16 @@ export default function TarifasPage() {
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete options={clientes} getOptionLabel={(o) => o.nombre ?? ''}
                   value={form.cliente} onChange={(_, v) => setForm(f => ({ ...f, cliente: v, salida: null }))}
+                  disabled={!!prefillTarifa}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
                   renderInput={(params) => <TextField {...params} label="Cliente" required size="small" sx={darkField} />}
                   sx={AC_SX} />
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete options={salidas} getOptionLabel={(o) => o.descripcion ?? ''}
                   value={form.salida} onChange={(_, v) => setForm(f => ({ ...f, salida: v }))}
-                  disabled={!form.cliente}
+                  disabled={!form.cliente || !!prefillTarifa}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
                   noOptionsText={form.cliente ? 'Sin destinos' : 'Elegí un cliente'}
                   renderInput={(params) => <TextField {...params} label="Destino" required size="small" sx={{ ...darkField, opacity: form.cliente ? 1 : 0.5 }} />}
                   sx={AC_SX} />
@@ -246,12 +370,13 @@ export default function TarifasPage() {
       {/* Confirm delete tarifa */}
       <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth
         slotProps={{ paper: { sx: { bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 3 } } }}>
-        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Eliminar tarifa</DialogTitle>
+        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Eliminar version de tarifa</DialogTitle>
         <DialogContent>
           {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
           <Typography sx={{ color: '#cbd5e1', fontSize: 14 }}>
-            ¿Eliminar la tarifa de <strong>{confirmDelete?.cliente_nombre}</strong> —{' '}
-            {confirmDelete?.salida_descripcion}? Esta acción no se puede deshacer.
+            ¿Eliminar definitivamente la version <strong>v{confirmDelete?.version}</strong> de{' '}
+            <strong>{confirmDelete?.cliente_nombre}</strong> — {confirmDelete?.salida_descripcion}?
+            Si es la version activa, se restaurara la version anterior.
           </Typography>
         </DialogContent>
         <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', px: 3, pb: 3 }}>
@@ -262,6 +387,28 @@ export default function TarifasPage() {
             startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />}
             sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' }, textTransform: 'none', fontWeight: 700 }}>
             {deleting ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </Box>
+      </Dialog>
+
+      <Dialog open={confirmRecalc} onClose={() => setConfirmRecalc(false)} maxWidth="xs" fullWidth
+        slotProps={{ paper: { sx: { bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 3 } } }}>
+        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Recalcular tarifas</DialogTitle>
+        <DialogContent>
+          {recalcError && <Alert severity="error" sx={{ mb: 2 }}>{recalcError}</Alert>}
+          <Typography sx={{ color: '#cbd5e1', fontSize: 14 }}>
+            Esto actualizara los viajes no liquidados para que usen la tarifa activa actual de su cliente/destino,
+            y recalculara los detalles y totales de preliquidaciones pendientes o para revisar.
+          </Typography>
+        </DialogContent>
+        <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', px: 3, pb: 3 }}>
+          <Button onClick={() => setConfirmRecalc(false)} sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleRecalcular} disabled={recalculating}
+            startIcon={recalculating ? <CircularProgress size={14} color="inherit" /> : <SyncIcon />}
+            sx={{ bgcolor: '#2563eb', '&:hover': { bgcolor: '#1d4ed8' }, textTransform: 'none', fontWeight: 700 }}>
+            {recalculating ? 'Recalculando...' : 'Recalcular'}
           </Button>
         </Box>
       </Dialog>

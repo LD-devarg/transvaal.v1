@@ -170,6 +170,11 @@ class ViajeListCreateView(generics.ListCreateAPIView):
 
 
 ESTADOS_PRELIQ_EDITABLES = {Preliquidacion.Estado.PENDIENTE, Preliquidacion.Estado.PARA_REVISAR}
+ESTADOS_PRELIQ_MODIFICABLES = {
+    Preliquidacion.Estado.PENDIENTE,
+    Preliquidacion.Estado.ENVIADA,
+    Preliquidacion.Estado.PARA_REVISAR,
+}
 
 
 def _puede_editar_viaje(viaje):
@@ -274,6 +279,18 @@ def _recalcular_preliq(preliq):
     preliq.gastos_periodo = gastos_periodo
     preliq.adeudado_final = adeudado_final
     preliq.save(update_fields=['total_sin_iva', 'total_con_iva', 'gastos_periodo', 'adeudado_final'])
+
+
+def _invalidar_envio_preliq(preliq):
+    update_fields = []
+    if preliq.estado != Preliquidacion.Estado.PENDIENTE:
+        preliq.estado = Preliquidacion.Estado.PENDIENTE
+        update_fields.append('estado')
+    if preliq.enviado_a_drive:
+        preliq.enviado_a_drive = False
+        update_fields.append('enviado_a_drive')
+    if update_fields:
+        preliq.save(update_fields=update_fields)
 
 
 class PreliquidacionListCreateView(generics.ListCreateAPIView):
@@ -409,7 +426,7 @@ class PreliquidacionAgregarViajeView(APIView):
 
     @transaction.atomic
     def post(self, request, pk):
-        preliq = self._get_preliq_pendiente(pk)
+        preliq = self._get_preliq_modificable(pk)
         if isinstance(preliq, Response):
             return preliq
 
@@ -421,6 +438,7 @@ class PreliquidacionAgregarViajeView(APIView):
                 pk=viaje_id,
                 proveedor=preliq.proveedor,
                 estado__in=['habilitado', 'preliquidado'],
+                preliquidacion__isnull=True,
             )
         except Viaje.DoesNotExist:
             return Response({'detail': 'Viaje no válido para este proveedor.'},
@@ -449,9 +467,11 @@ class PreliquidacionAgregarViajeView(APIView):
         viaje.save(update_fields=['preliquidacion', 'estado'])
 
         _recalcular_preliq(preliq)
+        _invalidar_envio_preliq(preliq)
+        preliq.refresh_from_db()
         return Response(PreliquidacionSerializer(preliq).data)
 
-    def _get_preliq_pendiente(self, pk):
+    def _get_preliq_modificable(self, pk):
         try:
             preliq = Preliquidacion.objects.prefetch_related(
                 'detalles__viaje__tarifa', 'detalles__viaje__proveedor',
@@ -459,8 +479,8 @@ class PreliquidacionAgregarViajeView(APIView):
             ).get(pk=pk)
         except Preliquidacion.DoesNotExist:
             return Response({'detail': 'Preliquidación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-        if preliq.estado != Preliquidacion.Estado.PENDIENTE:
-            return Response({'detail': 'Solo se puede modificar una preliquidación en estado pendiente.'},
+        if preliq.estado not in ESTADOS_PRELIQ_MODIFICABLES:
+            return Response({'detail': 'Solo se puede modificar una preliquidacion no confirmada ni liquidada.'},
                             status=status.HTTP_400_BAD_REQUEST)
         return preliq
 
@@ -481,8 +501,8 @@ class PreliquidacionQuitarViajeView(APIView):
             ).get(pk=pk)
         except Preliquidacion.DoesNotExist:
             return Response({'detail': 'Preliquidación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-        if preliq.estado != Preliquidacion.Estado.PENDIENTE:
-            return Response({'detail': 'Solo se puede modificar una preliquidación en estado pendiente.'},
+        if preliq.estado not in ESTADOS_PRELIQ_MODIFICABLES:
+            return Response({'detail': 'Solo se puede modificar una preliquidacion no confirmada ni liquidada.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         detalle = PreliquidacionDetalle.objects.filter(preliquidacion=preliq, viaje_id=viaje_pk).first()
@@ -496,6 +516,8 @@ class PreliquidacionQuitarViajeView(APIView):
         viaje.save(update_fields=['preliquidacion', 'estado'])
 
         _recalcular_preliq(preliq)
+        _invalidar_envio_preliq(preliq)
+        preliq.refresh_from_db()
         return Response(PreliquidacionSerializer(preliq).data)
 
 

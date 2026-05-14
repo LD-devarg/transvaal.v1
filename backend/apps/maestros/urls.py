@@ -4,7 +4,7 @@ from .views import (
     ProveedorListCreateView, ProveedorDetailView,
     TelegramStatusView, TelegramTestProveedorView, TelegramUpdatesView,
     SalidaListCreateView, SalidaDetailView,
-    TarifaListView, TarifaActualizarView, TarifaHistorialView, TarifaDetailView,
+    TarifaListView, TarifaActualizarView, TarifaHistorialView, TarifaDetailView, TarifaRecalcularView,
     AdicionalListCreateView, AdicionalDetailView,
 )
 
@@ -28,6 +28,7 @@ urlpatterns = [
     path('tarifas/',                                          TarifaListView.as_view(),       name='tarifa_list'),
     path('tarifas/<int:pk>/',                                 TarifaDetailView.as_view(),     name='tarifa_detail'),
     path('tarifas/actualizar/',                               TarifaActualizarView.as_view(), name='tarifa_actualizar'),
+    path('tarifas/recalcular/',                               TarifaRecalcularView.as_view(), name='tarifa_recalcular'),
     path('tarifas/historial/<int:salida_id>/<int:cliente_id>/', TarifaHistorialView.as_view(), name='tarifa_historial'),
 
     # Adicionales

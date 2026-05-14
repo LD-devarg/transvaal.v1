@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import client from '../../api/client'
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button,
@@ -306,6 +306,9 @@ export default function GastosPage() {
   const [editGasto, setEditGasto] = useState(null)
   const [success, setSuccess]     = useState('')
   const [expandedGasto, setExpandedGasto] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     client.get('/maestros/proveedores/').then((r) => setProveedores(r.data))
@@ -328,11 +331,33 @@ export default function GastosPage() {
   const abrirNuevo  = () => { setEditGasto(null); setModalOpen(true) }
   const abrirEditar = (g) => { setEditGasto(g);   setModalOpen(true) }
   const cerrarModal = () => { setModalOpen(false); setEditGasto(null) }
+  const abrirEliminar = (g) => {
+    setConfirmDelete(g)
+    setDeleteError('')
+  }
 
   const handleSuccess = () => {
     cerrarModal()
     setSuccess(editGasto ? 'Gasto actualizado correctamente.' : 'Gasto registrado correctamente.')
     cargarGastos()
+  }
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await client.delete(`/operaciones/gastos/${confirmDelete.id}/`)
+      setConfirmDelete(null)
+      setExpandedGasto((id) => (id === confirmDelete.id ? null : id))
+      setSuccess('Gasto eliminado correctamente.')
+      cargarGastos()
+    } catch (err) {
+      const data = err.response?.data || {}
+      setDeleteError(data.detail || Object.values(data).flat().join(' ') || 'No se pudo eliminar el gasto.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const handleExport = async () => {
@@ -484,9 +509,8 @@ export default function GastosPage() {
                   const open = expandedGasto === g.id
                   const comb = g.combustible || {}
                   return (
-                    <>
+                    <Fragment key={g.id}>
                       <TableRow
-                        key={g.id}
                         onClick={() => setExpandedGasto(open ? null : g.id)}
                         sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}
                       >
@@ -510,6 +534,15 @@ export default function GastosPage() {
                                 sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: '#60a5fa' } }}
                               >
                                 <EditIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                            )}
+                            {canEdit(g) && (
+                              <IconButton
+                                size="small"
+                                onClick={(e) => { e.stopPropagation(); abrirEliminar(g) }}
+                                sx={{ color: 'rgba(255,255,255,0.25)', '&:hover': { color: '#f87171' } }}
+                              >
+                                <DeleteIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             )}
                             <IconButton size="small" sx={{ color: 'rgba(255,255,255,0.25)' }}>
@@ -580,7 +613,7 @@ export default function GastosPage() {
                           </Collapse>
                         </TableCell>
                       </TableRow>
-                    </>
+                    </Fragment>
                   )
                 })}
               </TableBody>
@@ -607,6 +640,29 @@ export default function GastosPage() {
         <DialogContent sx={{ pt: 2 }}>
           <GastoForm onSuccess={handleSuccess} proveedores={proveedores} editGasto={editGasto} />
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth
+        slotProps={{ paper: { sx: { bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 3 } } }}>
+        <DialogTitle sx={{ color: '#fff', fontWeight: 700 }}>Eliminar gasto</DialogTitle>
+        <DialogContent>
+          {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
+          <Typography sx={{ color: '#cbd5e1', fontSize: 14 }}>
+            ¿Eliminar el gasto de <strong>{confirmDelete?.proveedor_nombre}</strong> del{' '}
+            {fmtFecha(confirmDelete?.fecha_gasto)} por <strong>{fmtPeso(confirmDelete?.total_gasto)}</strong>?
+            Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', px: 3, pb: 3 }}>
+          <Button onClick={() => setConfirmDelete(null)} sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleDelete} disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />}
+            sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' }, textTransform: 'none', fontWeight: 700 }}>
+            {deleting ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </Box>
       </Dialog>
     </Box>
   )
